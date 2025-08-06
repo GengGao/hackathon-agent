@@ -1,24 +1,33 @@
-import httpx
-import json
-from typing import List, Dict
+import litellm
+from typing import Dict
 
-OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-MODEL = "gpt-oss-20b"
+# ---------------------------------------------------------
+# Configuration – keep it in one place so you can switch later
+# ---------------------------------------------------------
+OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"          # <- Ollama's OpenAI‐compatible endpoint
+OLLAMA_MODEL    = "ollama/gpt-oss-20b"               # format "provider/model"
+DUMMY_API_KEY   = "sk-no-key"                       # Ollama ignores it
 
 def generate(prompt: str, system: str = "", temperature: float = 0.7, max_tokens: int = 1024) -> str:
     """
-    Calls Ollama's /generate endpoint.
+    Calls LiteLLM → which forwards to Ollama.
+    Returns the plain text response (no streaming).
     """
-    payload = {
-        "model": MODEL,
-        "prompt": f"{system}\n\n{prompt}",
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "stream": False,
-    }
-    with httpx.Client(timeout=60.0) as client:
-        resp = client.post(OLLAMA_URL, json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-        # Ollama returns a dict with "response"
-        return data.get("response", "")
+    # Build the OpenAI‑compatible message list
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    # LiteLLM handles the HTTP request internally
+    response = litellm.completion(
+        model=OLLAMA_MODEL,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        api_key=DUMMY_API_KEY,               # required param; ignored by Ollama
+        api_base=OLLAMA_BASE_URL,           # <‑‑ critical: point to local Ollama
+    )
+    # `response` is a litellm.utils.OpenAIResponse object
+    # Grab the assistant message
+    return response.choices[0].message.content

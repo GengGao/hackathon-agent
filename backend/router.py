@@ -9,6 +9,7 @@ import pdfminer.high_level
 import docx
 import pytesseract
 from PIL import Image
+import requests
 
 router = APIRouter()
 # Initialise RAG with default rule file (user can replace via API call later)
@@ -48,6 +49,15 @@ async def chat(
         extracted = extract_text_from_file(file)
         context_parts.append(f"[FILE_CONTENT]\n{extracted}\n[/FILE_CONTENT]")
     if url_text:
+        #url_text can be a string of text or a URL
+        if url_text.startswith('http'):
+            # Download the URL content
+            response = requests.get(url_text)
+            url_text = response.text
+        else:
+            # Assume it's plain text
+            pass
+
         context_parts.append(f"[URL_TEXT]\n{url_text}\n[/URL_TEXT]")
 
     # Retrieve relevant rule chunks

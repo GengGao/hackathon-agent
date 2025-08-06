@@ -45,16 +45,19 @@ export default function FileDrop({ setFile, uploadedFiles, setUploadedFiles }) {
 
   return (
     <div
-      className={`dropzone rounded-lg p-4 text-center flex-grow flex flex-col justify-center items-center ${isDragOver ? 'dragover' : ''}`}
+      className={`dropzone rounded-xl p-6 text-center flex-grow flex flex-col justify-center items-center border-2 border-dashed ${isDragOver ? 'dragover' : ''}`}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
-      <i className="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-2"></i>
-      <p className="font-semibold">Drag & Drop Files</p>
-      <p className="text-xs text-gray-500">IMG, PDF, DOCX, TXT</p>
-      <p className="text-xs text-gray-500 my-2">or</p>
-      <label className="cursor-pointer bg-blue-500 text-white text-sm font-bold py-2 px-4 rounded-lg hover:bg-blue-600 transition">
+      <div className="relative mb-4">
+        <i className="fas fa-cloud-upload-alt text-5xl gradient-text"></i>
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-purple-500 rounded-full blur-lg opacity-30"></div>
+      </div>
+      <p className="font-semibold text-readable-dark mb-1">Drag & Drop Files</p>
+      <p className="text-xs text-readable-light mb-2">IMG, PDF, DOCX, TXT</p>
+      <p className="text-xs text-readable-light my-2">or</p>
+      <label className="cursor-pointer btn-gradient text-white text-sm font-bold py-2 px-6 rounded-lg transition-all duration-300 hover:scale-105">
         Browse Files
         <input
           type="file"

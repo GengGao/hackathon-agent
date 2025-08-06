@@ -10,3 +10,4 @@ pdfminer.six
 python-docx
 pytesseract   # optional
 Pillow
+litellm
