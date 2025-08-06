@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+python-multipart
+faiss-cpu
+sentence-transformers
+jinja2
+pydantic
+python-dotenv
+pdfminer.six
+python-docx
+pytesseract   # optional
+Pillow

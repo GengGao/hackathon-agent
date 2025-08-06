@@ -1,0 +1,25 @@
+Hackathon Project Guidelines
+
+General Rules:
+- Projects should be innovative and solve real problems
+- Code should be well-documented and maintainable
+- Teams should work collaboratively and communicate effectively
+- Projects must be completed within the hackathon timeframe
+
+Technical Requirements:
+- Use modern development practices and tools
+- Implement proper error handling and validation
+- Follow security best practices
+- Ensure code is production-ready and scalable
+
+Presentation Guidelines:
+- Create a compelling demo that showcases your solution
+- Prepare a clear pitch that explains the problem and solution
+- Highlight the technical implementation and innovation
+- Be ready to answer questions about your project
+
+Judging Criteria:
+- Innovation and creativity of the solution
+- Technical complexity and implementation quality
+- Potential impact and real-world applicability
+- Presentation and communication skills
