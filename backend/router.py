@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from typing import List, Dict, Any
-from llm import generate_async
+from llm import generate_stream
 from rag import RuleRAG
 from pathlib import Path
 import json, io
@@ -30,19 +30,16 @@ def extract_text_from_file(file: UploadFile) -> str:
         # Assume plain text
         return content.decode('utf-8', errors='ignore')
 
-@router.post("/chat")
-async def chat(
+
+@router.post("/chat-stream")
+async def chat_stream(
     user_input: str = Form(...),
     file: UploadFile = File(None),
-    url_text: str = Form(None)  # you can paste copied content from a URL
-) -> JSONResponse:
+    url_text: str = Form(None),
+):
     """
-    Main entry point:
-    - user_input: the natural‑language prompt
-    - optional file upload (PDF, DOCX, image)
-    - optional pasted url_text for any offline copy of a web page
+    Streaming version of the chat endpoint that returns Server-Sent Events.
     """
-
     # Gather context
     context_parts = []
     if file:
@@ -68,11 +65,11 @@ async def chat(
     system_prompt = f"""You are **HackathonGPT**, an expert assistant that helps participants create, refine, and submit hackathon projects completely offline.
 
     - Use ONLY the information supplied in the {rule_text} (the official competition rules you have been given as factual reference). Do not hallucinate external policies.
-    - When a user asks for an idea, suggest 3–5 distinct concepts that can be built with *gpt‑oss‑20b* locally and that satisfy the “Best Local Agent” category.
-    - When checking compliance, quote the exact rule number (e.g., “Rule 4.1 – Eligibility”) and explain if the draft violates it.
+    - When a user asks for an idea, suggest 3–5 distinct concepts that can be built with *gpt‑oss‑20b* locally and that satisfy the "Best Local Agent" category.
+    - When checking compliance, quote the exact rule number (e.g., "Rule 4.1 – Eligibility") and explain if the draft violates it.
     - When building a submission, fill in the required fields:
-    * Title (≤ 100 chars)
-    * Short description (≤ 300 words)
+    * Title (≤ 100 chars)
+    * Short description (≤ 300 words)
     * Project URL (optional)
     * Eligibility summary
     * Technical stack (must include Ollama + gpt‑oss‑20b)
@@ -84,25 +81,25 @@ async def chat(
     # Assemble final prompt
     full_prompt = "\n".join(context_parts + [user_input])
 
-    # Call LLM
-    response = await generate_async(full_prompt, system=system_prompt)
+    async def token_generator():
+        # Send rule chunks first
+        yield f"data: {json.dumps({'type': 'rule_chunks', 'rule_chunks': [c for c,_ in rule_hits]})}\n\n"
 
-    return JSONResponse(content={"response": response, "rule_chunks": [c for c,_ in rule_hits]})
+        # `generate_stream` now yields both thinking and content data
+        async for data in generate_stream(full_prompt, system=system_prompt):
+            if isinstance(data, dict):
+                # New format: {"type": "thinking", "content": "..."} or {"type": "content", "content": "..."}
+                if data.get("type") == "thinking":
+                    yield f"data: {json.dumps({'type': 'thinking', 'content': data['content']})}\n\n"
+                elif data.get("type") == "content" and data.get("content"):
+                    yield f"data: {json.dumps({'type': 'token', 'token': data['content']})}\n\n"
+            elif isinstance(data, str) and data:
+                # Backward compatibility: plain string tokens
+                yield f"data: {json.dumps({'type': 'token', 'token': data})}\n\n"
+
+        # Send end marker
+        yield f"data: {json.dumps({'type': 'end'})}\n\n"
+
+    return StreamingResponse(token_generator(), media_type="text/event-stream")
 
 
-# @router.post("/chat-stream")
-# async def chat_stream(
-#     user_input: str = Form(...),
-#     file: UploadFile = File(None),
-#     url_text: str = Form(None),
-# ):
-#     # Same context/rag steps as before (omitted for brevity)
-#     # ...
-
-#     async def token_generator():
-#         # `generate_stream` yields token strings
-#         async for token in generate_stream(full_prompt, system=system_prompt):
-#             # Wrap each token as a JSON line for SSE
-#             yield f"data: {json.dumps({'token': token})}\n\n"
-
-#     return StreamingResponse(token_generator(), media_type="text/event-stream")
