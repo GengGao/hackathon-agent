@@ -1,8 +1,8 @@
 from fastapi import APIRouter, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from typing import List, Dict, Any
-from .llm import generate
-from .rag import RuleRAG
+from llm import generate_async
+from rag import RuleRAG
 from pathlib import Path
 import json, io
 import pdfminer.high_level
@@ -85,6 +85,24 @@ async def chat(
     full_prompt = "\n".join(context_parts + [user_input])
 
     # Call LLM
-    response = generate(full_prompt, system=system_prompt)
+    response = await generate_async(full_prompt, system=system_prompt)
 
     return JSONResponse(content={"response": response, "rule_chunks": [c for c,_ in rule_hits]})
+
+
+# @router.post("/chat-stream")
+# async def chat_stream(
+#     user_input: str = Form(...),
+#     file: UploadFile = File(None),
+#     url_text: str = Form(None),
+# ):
+#     # Same context/rag steps as before (omitted for brevity)
+#     # ...
+
+#     async def token_generator():
+#         # `generate_stream` yields token strings
+#         async for token in generate_stream(full_prompt, system=system_prompt):
+#             # Wrap each token as a JSON line for SSE
+#             yield f"data: {json.dumps({'token': token})}\n\n"
+
+#     return StreamingResponse(token_generator(), media_type="text/event-stream")
