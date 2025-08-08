@@ -152,7 +152,7 @@ body::before {
 
 /* Gradient text effect with better contrast */
 .gradient-text {
-  background: linear-gradient(135deg, #2a4ce6 0%, #763fae 50%, #58e1b9 100%);
+  background: linear-gradient(135deg, #2a4ce6 0%, #1e65b2 50%, #139854 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
