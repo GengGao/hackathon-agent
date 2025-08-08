@@ -4,11 +4,11 @@ from pathlib import Path
 from typing import Any, Dict, List
 import json
 import os
+from models.db import list_todos_db, add_todo_db, clear_todos_db
 
 
 DATA_DIR = Path(__file__).parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
-TODOS_FILE = DATA_DIR / "todos.json"
 
 
 def _read_json_file(path: Path, default: Any) -> Any:
@@ -25,21 +25,18 @@ def _write_json_file(path: Path, data: Any) -> None:
 
 
 def list_todos() -> List[str]:
-    todos = _read_json_file(TODOS_FILE, [])
-    if not isinstance(todos, list):
-        todos = []
-    return todos
+    rows = list_todos_db()
+    return [str(r["item"]) for r in rows]
 
 
 def add_todo(item: str) -> Dict[str, Any]:
+    add_todo_db(item)
     todos = list_todos()
-    todos.append(item)
-    _write_json_file(TODOS_FILE, todos)
     return {"ok": True, "count": len(todos)}
 
 
 def clear_todos() -> Dict[str, Any]:
-    _write_json_file(TODOS_FILE, [])
+    clear_todos_db()
     return {"ok": True}
 
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import remarkGfm from "remark-gfm";
 
 export default function ChatBox({
@@ -8,6 +9,7 @@ export default function ChatBox({
   isTyping,
   setIsTyping,
   onStop,
+  currentSessionId,
 }) {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef(null);
@@ -30,6 +32,19 @@ export default function ChatBox({
 
   return (
     <>
+      {/* Chat Header */}
+      <div className="p-4 border-b border-white/20 flex items-center justify-between">
+        <h3 className="text-lg font-semibold gradient-text">
+          <i className="fas fa-comments mr-2"></i>
+          Chat Assistant
+        </h3>
+        {currentSessionId && (
+          <span className="text-xs text-readable-light bg-white/10 px-2 py-1 rounded-full">
+            Session: {currentSessionId.slice(0, 8)}...
+          </span>
+        )}
+      </div>
+
       <div className="flex-grow p-4 overflow-y-auto scrollbar">
         {messages.length === 0 && (
           <div className="flex justify-start mb-4">
@@ -83,7 +98,26 @@ export default function ChatBox({
                         <span className="inline-block w-2 h-4 bg-blue-500 ml-1 animate-pulse"></span>
                       </div>
                     ) : (
-                      <ReactMarkdown children={msg.content} remarkPlugins={[remarkGfm]} />
+                      <ReactMarkdown
+                        children={msg.content}
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          code({node, inline, className, children, ...props}) {
+                            const match = /language-(\w+)/.exec(className || '')
+                            return !inline && match ? (
+                              <SyntaxHighlighter
+                                children={String(children).replace(/\n$/, '')}
+                                language={match[1]}
+                                PreTag="div"
+                                {...props}
+                              />
+                            ) : (
+                              <code className={className} {...props}>
+                                {children}
+                              </code>
+                            )
+                          }
+                      }}/>
                     )}
                   </div>
                 ) : (

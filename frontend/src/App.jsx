@@ -1,6 +1,7 @@
 import axios from "axios";
 import { useState } from "react";
 import ChatBox from "./components/ChatBox";
+import ChatHistory from "./components/ChatHistory";
 import FileDrop from "./components/FileDrop";
 
 // Use same-origin paths so the service worker can intercept and cache
@@ -13,6 +14,8 @@ function App() {
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
   const [abortController, setAbortController] = useState(null);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [showChatHistory, setShowChatHistory] = useState(false);
   const [dashboardData, setDashboardData] = useState({
     idea: "Not defined yet.",
     stack: "Not defined yet.",
@@ -25,6 +28,7 @@ function App() {
     form.append("user_input", text);
     if (file) form.append("file", file);
     if (urlText) form.append("url_text", urlText);
+    if (currentSessionId) form.append("session_id", currentSessionId);
 
     // Add user message immediately
     setMessages((prev) => [...prev, { role: "user", content: text }]);
@@ -73,7 +77,10 @@ function App() {
               try {
                 const data = JSON.parse(line.slice(6));
 
-                if (data.type === "rule_chunks") {
+                if (data.type === "session_info") {
+                  // Update current session ID from backend
+                  setCurrentSessionId(data.session_id);
+                } else if (data.type === "rule_chunks") {
                   setMessages((prev) => {
                     const newMessages = [...prev];
                     const assistantMessageIndex = newMessages.length - 1;
@@ -211,6 +218,42 @@ function App() {
     }
   };
 
+  const handleNewChat = () => {
+    setCurrentSessionId(null);
+    setMessages([]);
+    setFile(null);
+    setUrlText("");
+    setUploadedFiles([]);
+  };
+
+  const handleSelectSession = async (sessionId) => {
+    try {
+      const response = await axios.get(`/api/chat-sessions/${sessionId}`);
+      const { session, messages: chatMessages } = response.data;
+
+      setCurrentSessionId(sessionId);
+      setMessages(chatMessages.map(msg => ({
+        role: msg.role,
+        content: msg.content,
+        rule_chunks: [],
+        thinking: ""
+      })));
+
+      // Clear file and URL context when switching sessions
+      setFile(null);
+      setUrlText("");
+      setUploadedFiles([]);
+    } catch (error) {
+      console.error("Failed to load session:", error);
+    }
+  };
+
+  const handleDeleteSession = (sessionId) => {
+    if (currentSessionId === sessionId) {
+      handleNewChat();
+    }
+  };
+
   return (
     <div className="text-gray-800 flex flex-col h-screen">
       {/* Header */}
@@ -225,6 +268,13 @@ function App() {
           </h1>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowChatHistory(!showChatHistory)}
+            className="lg:hidden btn-gradient p-2 rounded-lg hover:scale-105 transition-all duration-300"
+            title="Chat History"
+          >
+            <i className="fas fa-history text-white text-sm"></i>
+          </button>
           <span className="text-sm font-medium text-green-600 flex items-center glass-effect px-3 py-1 rounded-full text-readable-dark">
             <i className="fas fa-circle text-xs mr-2 animate-pulse text-green-500"></i>
             gpt-oss-20b | Local & Offline
@@ -233,9 +283,22 @@ function App() {
       </header>
 
       {/* Main Content */}
-      <div className="flex-grow flex flex-col md:flex-row p-4 gap-4 overflow-hidden">
-        {/* Left Panel: Context & Rules with glassmorphism */}
-        <div className="w-full md:w-1/4 glass-effect-readable rounded-xl shadow-xl p-4 flex flex-col float-animation">
+      <div className="flex-grow flex flex-col lg:flex-row p-4 gap-4 overflow-hidden">
+
+        {/* Left Panel with glassmorphism */}
+        <div className="flex flex-col w-full lg:w-1/4 float-animation">
+          {/* Chat History Sidebar */}
+        <div className={`flex w-full ${showChatHistory ? 'block' : 'hidden lg:block'} mb-6 h-[50%]`}>
+          <ChatHistory
+            currentSessionId={currentSessionId}
+            onSelectSession={handleSelectSession}
+            onNewChat={handleNewChat}
+            onDeleteSession={handleDeleteSession}
+          />
+        </div>
+
+        {/* Context & Rules */}
+        <div className="w-full glass-effect-readable rounded-xl shadow-xl p-4 flex flex-col ">
           <h2 className="text-lg font-semibold mb-3 border-b border-white/20 pb-2 gradient-text">
             Hackathon Context
           </h2>
@@ -290,20 +353,23 @@ function App() {
             )}
           </div>
         </div>
+        </div>
+
 
         {/* Center Panel: Chat Interface with glassmorphism */}
-        <div className="w-full md:w-1/2 glass-effect-readable rounded-xl shadow-xl flex flex-col">
+        <div className="w-full lg:w-1/2 glass-effect-readable rounded-xl shadow-xl flex flex-col">
           <ChatBox
             messages={messages}
             onSend={sendMessage}
             isTyping={isTyping}
             setIsTyping={setIsTyping}
             onStop={stopGeneration}
+            currentSessionId={currentSessionId}
           />
         </div>
 
         {/* Right Panel: Project Dashboard with glassmorphism */}
-        <div className="w-full md:w-1/4 glass-effect-readable rounded-xl shadow-xl p-4 flex flex-col float-animation">
+        <div className="w-full lg:w-1/4 glass-effect-readable rounded-xl shadow-xl p-4 flex flex-col float-animation">
           <h2 className="text-lg font-semibold mb-3 border-b border-white/20 pb-2 gradient-text">
             Project Dashboard
           </h2>

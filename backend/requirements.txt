@@ -13,3 +13,4 @@ Pillow
 litellm
 openai
 numpy
+pytest

@@ -4,6 +4,18 @@ from typing import List, Dict, Any
 from llm import generate_stream
 from rag import RuleRAG
 from tools import get_tool_schemas, call_tool, list_todos, add_todo, clear_todos
+from models import (
+    create_chat_session,
+    get_chat_session,
+    add_chat_message,
+    get_chat_messages,
+    update_chat_session_title,
+    get_recent_chat_sessions,
+    delete_chat_session,
+    ChatSession,
+    ChatMessage,
+)
+import uuid
 from pathlib import Path
 import json, io
 import pdfminer.high_level
@@ -34,26 +46,44 @@ async def chat_stream(
     user_input: str = Form(...),
     file: UploadFile = File(None),
     url_text: str = Form(None),
+    session_id: str = Form(None),
 ):
     """
     Streaming version of the chat endpoint that returns Server-Sent Events.
+    Includes chat history as context when session_id is provided.
     """
+    # Generate or use provided session_id
+    if not session_id:
+        session_id = str(uuid.uuid4())
+
+    # Create/ensure chat session exists
+    create_chat_session(session_id)
+
     # Gather context
     context_parts = []
+    metadata = {}
+
     if file:
         extracted = extract_text_from_file(file)
         context_parts.append(f"[FILE_CONTENT]\n{extracted}\n[/FILE_CONTENT]")
+        metadata["file"] = {"filename": file.filename, "size": len(extracted)}
+
     if url_text:
         #url_text can be a string of text or a URL
         if url_text.startswith('http'):
             # Download the URL content
             response = requests.get(url_text)
             url_text = response.text
+            metadata["url"] = url_text[:100] + "..." if len(url_text) > 100 else url_text
         else:
             # Assume it's plain text
-            pass
+            metadata["url_text"] = url_text[:100] + "..." if len(url_text) > 100 else url_text
 
         context_parts.append(f"[URL_TEXT]\n{url_text}\n[/URL_TEXT]")
+
+    # Save user message to database
+    user_content = "\n".join(context_parts + [user_input])
+    add_chat_message(session_id, "user", user_content, metadata)
 
     # Retrieve relevant rule chunks
     rule_hits = rag.retrieve(user_input, k=5)
@@ -77,20 +107,39 @@ async def chat_stream(
     - Keep the tone clear, concise, and encouraging. Do not mention any external APIs or internet resources.
     - Cite rule chunk numbers in brackets if you refer to a specific rule."""
 
+    # Load previous chat history for context
+    chat_history = get_chat_messages(session_id, limit=20)  # Last 20 messages
+
     # Build messages for tool-enabled streaming
     tools = get_tool_schemas()
     messages: List[Dict[str, Any]] = [
         {"role": "system", "content": system_prompt + "\n\n" + rule_text},
-        {"role": "user", "content": "\n".join(context_parts + [user_input])},
     ]
 
+    # Add previous chat history (excluding the current message we just added)
+    for msg_row in chat_history[:-1]:  # Exclude the last message (current user input)
+        messages.append({
+            "role": msg_row["role"],
+            "content": msg_row["content"]
+        })
+
+    # Add current user message
+    messages.append({
+        "role": "user",
+        "content": user_content
+    })
+
     async def token_generator():
-        # Send rule chunks first
+        # Send session_id and rule chunks first
+        yield f"data: {json.dumps({'type': 'session_info', 'session_id': session_id})}\n\n"
         yield f"data: {json.dumps({'type': 'rule_chunks', 'rule_chunks': [c for c,_ in rule_hits]})}\n\n"
+
+        # Collect assistant response for saving to database
+        assistant_response_parts = []
 
         # Stream the assistant response, surface tool_calls events to UI as info
         async for data in generate_stream(
-            "\n".join(context_parts + [user_input]),
+            user_content,
             system=system_prompt + "\n\n" + rule_text,
             tools=tools,
             execute_tool=lambda fn, args: call_tool(fn, args),
@@ -102,9 +151,17 @@ async def chat_stream(
                 elif data.get("type") == "tool_calls":
                     yield f"data: {json.dumps({'type': 'tool_calls', 'tool_calls': data.get('tool_calls', [])})}\n\n"
                 elif data.get("type") == "content" and data.get("content"):
-                    yield f"data: {json.dumps({'type': 'token', 'token': data['content']})}\n\n"
+                    content = data['content']
+                    assistant_response_parts.append(content)
+                    yield f"data: {json.dumps({'type': 'token', 'token': content})}\n\n"
             elif isinstance(data, str) and data:
+                assistant_response_parts.append(data)
                 yield f"data: {json.dumps({'type': 'token', 'token': data})}\n\n"
+
+        # Save assistant response to database
+        if assistant_response_parts:
+            assistant_content = "".join(assistant_response_parts)
+            add_chat_message(session_id, "assistant", assistant_content)
 
         yield f"data: {json.dumps({'type': 'end'})}\n\n"
 
@@ -142,4 +199,49 @@ def upload_rules(file: UploadFile = File(...)):
     # Reload RAG index
     global rag
     rag = RuleRAG(target)
+    return {"ok": True}
+
+
+@router.get("/chat-sessions")
+def get_chat_sessions():
+    """Get recent chat sessions."""
+    sessions = get_recent_chat_sessions(limit=20)
+    return {
+        "sessions": [ChatSession.from_row(row).model_dump() for row in sessions]
+    }
+
+
+@router.get("/chat-sessions/{session_id}")
+def get_chat_session_detail(session_id: str):
+    """Get a specific chat session with its messages."""
+    session = get_chat_session(session_id)
+    if not session:
+        return JSONResponse(status_code=404, content={"error": "Session not found"})
+
+    messages = get_chat_messages(session_id)
+    return {
+        "session": ChatSession.from_row(session).model_dump(),
+        "messages": [ChatMessage.from_row(row).model_dump() for row in messages]
+    }
+
+
+@router.put("/chat-sessions/{session_id}/title")
+def update_session_title(session_id: str, title: str = Form(...)):
+    """Update the title of a chat session."""
+    session = get_chat_session(session_id)
+    if not session:
+        return JSONResponse(status_code=404, content={"error": "Session not found"})
+
+    update_chat_session_title(session_id, title)
+    return {"ok": True}
+
+
+@router.delete("/chat-sessions/{session_id}")
+def delete_session(session_id: str):
+    """Delete a chat session and all its messages."""
+    session = get_chat_session(session_id)
+    if not session:
+        return JSONResponse(status_code=404, content={"error": "Session not found"})
+
+    delete_chat_session(session_id)
     return {"ok": True}
