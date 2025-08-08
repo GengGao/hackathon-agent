@@ -3,7 +3,8 @@ import { useState } from "react";
 import ChatBox from "./components/ChatBox";
 import FileDrop from "./components/FileDrop";
 
-axios.defaults.baseURL = "http://localhost:8000";
+// Use same-origin paths so the service worker can intercept and cache
+axios.defaults.baseURL = "";
 
 function App() {
   const [messages, setMessages] = useState([]);
@@ -41,7 +42,7 @@ function App() {
     try {
       {
         const response = await fetch(
-          `${axios.defaults.baseURL}/api/chat-stream`,
+          `/api/chat-stream`,
           {
             method: "POST",
             body: form,
@@ -167,6 +168,12 @@ function App() {
   };
 
   const setContext = async () => {
+    if (!navigator.onLine) {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: 'You are offline. Context will be used locally, but API calls may fail until you reconnect.' }
+      ])
+    }
     if (!urlText.trim() && uploadedFiles.length === 0) {
       setMessages((prev) => [
         ...prev,
@@ -191,7 +198,7 @@ function App() {
 
   const updateDashboard = async () => {
     try {
-      const res = await fetch(`${axios.defaults.baseURL}/api/todos`);
+      const res = await fetch(`/api/todos`);
       const data = await res.json();
       setDashboardData({
         idea: "Derived from your latest chat.",
