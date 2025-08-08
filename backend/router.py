@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import List, Dict, Any
-from llm import generate_stream
+from llm import generate_stream, check_ollama_status, get_current_model, set_model
 from rag import RuleRAG
 from tools import get_tool_schemas, call_tool, list_todos, add_todo, clear_todos
 from models import (
@@ -245,3 +245,41 @@ def delete_session(session_id: str):
 
     delete_chat_session(session_id)
     return {"ok": True}
+
+
+@router.get("/ollama/status")
+async def get_ollama_status():
+    """Check if Ollama is running and return connection status."""
+    try:
+        status = await check_ollama_status()
+        return {
+            "connected": status["connected"],
+            "model": status.get("model"),
+            "available_models": status.get("available_models", [])
+        }
+    except Exception as e:
+        return {
+            "connected": False,
+            "error": str(e),
+            "model": None,
+            "available_models": []
+        }
+
+
+@router.get("/ollama/model")
+def get_ollama_model():
+    """Get the currently selected model."""
+    return {"model": get_current_model()}
+
+
+@router.post("/ollama/model")
+async def set_ollama_model(model: str = Form(...)):
+    """Set the model to use for generation."""
+    try:
+        success = await set_model(model)
+        if success:
+            return {"ok": True, "model": get_current_model()}
+        else:
+            return JSONResponse(status_code=400, content={"error": "Invalid model"})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})

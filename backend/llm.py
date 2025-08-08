@@ -13,6 +13,32 @@ OLLAMA_BASE_URL = "http://127.0.0.1:11434"          # <- Ollama's base URL (with
 OLLAMA_MODEL    = "gpt-oss:20b"                     # Just the model name for Ollama
 DUMMY_API_KEY   = "sk-no-key"                       # Ollama ignores it
 
+# Available models - will be fetched from Ollama
+AVAILABLE_MODELS = []
+
+# Global variable to track current model
+current_model = OLLAMA_MODEL
+
+async def initialize_models():
+    """Initialize available models on startup."""
+    await fetch_available_models()
+    print(f"Initialized models: {AVAILABLE_MODELS}")
+
+async def fetch_available_models():
+    """Fetch available models from Ollama and update AVAILABLE_MODELS."""
+    global AVAILABLE_MODELS
+    try:
+        response = await client.models.list()
+        # Filter for gpt-oss models specifically
+        ollama_models = [model.id for model in response.data if model.id.startswith("gpt-oss")]
+        AVAILABLE_MODELS = ollama_models if ollama_models else ["gpt-oss:20b", "gpt-oss:120b"]  # fallback
+        return AVAILABLE_MODELS
+    except Exception as e:
+        # Fallback to default models if Ollama is not available
+        AVAILABLE_MODELS = ["gpt-oss:20b", "gpt-oss:120b"]
+        print(f"Failed to fetch models from Ollama: {e}. Using fallback models.")
+        return AVAILABLE_MODELS
+
 # Configure LiteLLM for Ollama
 litellm.set_verbose = False
 litellm.api_base = OLLAMA_BASE_URL
@@ -54,7 +80,7 @@ async def generate_stream(
             round_index += 1
             # Stream assistant response for this round
             response = await client.chat.completions.create(
-                model=OLLAMA_MODEL,
+                model=current_model,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -185,7 +211,7 @@ async def generate_stream(
             if not any_yield_this_round and not tool_calls_args_buffers:
                 try:
                     fallback = await client.chat.completions.create(
-                        model=OLLAMA_MODEL,
+                        model=current_model,
                         messages=messages,
                         temperature=temperature,
                         max_tokens=max_tokens,
@@ -202,7 +228,7 @@ async def generate_stream(
             if any_yield_this_round and not any_content_this_round and not tool_calls_args_buffers:
                 try:
                     fallback2 = await client.chat.completions.create(
-                        model=OLLAMA_MODEL,
+                        model=current_model,
                         messages=messages,
                         temperature=temperature,
                         max_tokens=max_tokens,
@@ -250,9 +276,55 @@ async def generate_stream(
 
     except Exception as e:
         print(f"Error calling OpenAI SDK: {e}")
-        print(f"Model: {OLLAMA_MODEL}")
+        print(f"Model: {current_model}")
         print(f"API Base: {OLLAMA_BASE_URL}/v1")
         raise
+
+
+async def check_ollama_status():
+    """Check if Ollama is running and return status information."""
+    try:
+        # Fetch latest available models from Ollama
+        available_models = await fetch_available_models()
+
+        return {
+            "connected": True,
+            "model": current_model,
+            "available_models": available_models
+        }
+    except Exception as e:
+        return {
+            "connected": False,
+            "error": str(e),
+            "model": current_model,
+            "available_models": AVAILABLE_MODELS  # Use cached/fallback models
+        }
+
+
+def get_current_model():
+    """Get the currently selected model."""
+    return current_model
+
+
+def get_available_models():
+    """Get the list of available models."""
+    return AVAILABLE_MODELS
+
+
+async def set_model(model_name: str):
+    """Set the model to use for generation."""
+    global current_model
+
+    # Refresh available models from Ollama to ensure we have the latest list
+    try:
+        await fetch_available_models()
+    except Exception:
+        pass  # Continue with cached models if fetch fails
+
+    if model_name in AVAILABLE_MODELS:
+        current_model = model_name
+        return True
+    return False
 
         # # Use LiteLLM for streaming (COMMENTED OUT)
         # response = litellm.completion(

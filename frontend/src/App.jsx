@@ -1,5 +1,5 @@
 import axios from "axios";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ChatBox from "./components/ChatBox";
 import ChatHistory from "./components/ChatHistory";
 import FileDrop from "./components/FileDrop";
@@ -22,6 +22,64 @@ function App() {
     todos: ["No tasks yet."],
     submission: "No notes yet.",
   });
+  const [ollamaStatus, setOllamaStatus] = useState({
+    connected: false,
+    model: "gpt-oss:20b",
+    available_models: []
+  });
+  const [showModelPicker, setShowModelPicker] = useState(false);
+
+  // Check Ollama status
+  const checkOllamaStatus = async () => {
+    try {
+      const response = await axios.get("/api/ollama/status");
+      setOllamaStatus(response.data);
+    } catch (error) {
+      console.error("Failed to check Ollama status:", error);
+      setOllamaStatus({
+        connected: false,
+        model: "gpt-oss:20b",
+        available_models: []
+      });
+    }
+  };
+
+  // Handle model change
+  const handleModelChange = async (model) => {
+    try {
+      const formData = new FormData();
+      formData.append("model", model);
+
+      const response = await axios.post("/api/ollama/model", formData);
+      if (response.data.ok) {
+        setOllamaStatus(prev => ({ ...prev, model: response.data.model }));
+        setShowModelPicker(false);
+      }
+    } catch (error) {
+      console.error("Failed to change model:", error);
+    }
+  };
+
+  // Periodic status checking
+  useEffect(() => {
+    checkOllamaStatus(); // Initial check
+    const interval = setInterval(checkOllamaStatus, 10000); // Check every 10 seconds
+    return () => clearInterval(interval);
+  }, []);
+
+  // Close model picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showModelPicker && !event.target.closest('.model-picker-container')) {
+        setShowModelPicker(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showModelPicker]);
 
   const sendMessage = async (text) => {
     const form = new FormData();
@@ -275,10 +333,85 @@ function App() {
           >
             <i className="fas fa-history text-white text-sm"></i>
           </button>
-          <span className="text-sm font-medium text-green-600 flex items-center glass-effect px-3 py-1 rounded-full text-readable-dark">
-            <i className="fas fa-circle text-xs mr-2 animate-pulse text-green-500"></i>
-            gpt-oss-20b | Local & Offline
-          </span>
+
+          {/* Live Ollama Status and Model Picker */}
+          <div className="relative model-picker-container">
+            <button
+              onClick={() => setShowModelPicker(!showModelPicker)}
+              className={`text-sm font-medium flex items-center glass-effect px-3 py-1 rounded-full transition-all duration-300 hover:scale-105 ${
+                ollamaStatus.connected
+                  ? 'text-green-600 text-readable-dark'
+                  : 'text-red-600 text-readable-dark'
+              }`}
+              title="Click to change model"
+            >
+              <i className={`fas fa-circle text-xs mr-2 ${
+                ollamaStatus.connected
+                  ? 'animate-pulse text-green-500'
+                  : 'text-red-500'
+              }`}></i>
+              {ollamaStatus.model} | Ollama
+              <i className="fas fa-chevron-down text-xs ml-2"></i>
+            </button>
+
+            {/* Model Picker Dropdown */}
+            {showModelPicker && (
+              <div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 py-2 min-w-48 z-50">
+                <div className="px-3 py-2 text-xs text-gray-500 border-b border-gray-100">
+                  Select Model
+                </div>
+                {ollamaStatus.available_models.length > 0 ?
+                  ollamaStatus.available_models.map((model) => (
+                  <button
+                    key={model}
+                    onClick={() => handleModelChange(model)}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors ${
+                      ollamaStatus.model === model
+                        ? 'bg-blue-50 text-blue-600 font-medium'
+                        : 'text-gray-700'
+                    }`}
+                  >
+                    <i className={`fas fa-circle text-xs mr-2 ${
+                      ollamaStatus.model === model ? 'text-blue-500' : 'text-gray-300'
+                    }`}></i>
+                    {model}
+                    {ollamaStatus.model === model && (
+                      <i className="fas fa-check text-xs ml-auto float-right mt-0.5 text-blue-500"></i>
+                    )}
+                  </button>
+                )) :
+                  // Fallback to hardcoded models if none available
+                  ["gpt-oss:20b", "gpt-oss:120b"].map((model) => (
+                    <button
+                      key={model}
+                      onClick={() => handleModelChange(model)}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors ${
+                        ollamaStatus.model === model
+                          ? 'bg-blue-50 text-blue-600 font-medium'
+                          : 'text-gray-700'
+                      }`}
+                    >
+                      <i className={`fas fa-circle text-xs mr-2 ${
+                        ollamaStatus.model === model ? 'text-blue-500' : 'text-gray-300'
+                      }`}></i>
+                      {model}
+                      {ollamaStatus.model === model && (
+                        <i className="fas fa-check text-xs ml-auto float-right mt-0.5 text-blue-500"></i>
+                      )}
+                    </button>
+                  ))
+                }
+                <div className="border-t border-gray-100 mt-2 pt-2 px-3">
+                  <div className="text-xs text-gray-500">
+                    Status: {ollamaStatus.connected ?
+                      <span className="text-green-600 font-medium">Connected</span> :
+                      <span className="text-red-600 font-medium">Disconnected</span>
+                    }
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 

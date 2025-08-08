@@ -49,7 +49,7 @@ body::before {
 
 /* Enhanced chat bubble with gradients */
 .chat-bubble {
-  max-width: 80%;
+  max-width: 100%;
   word-wrap: break-word;
   position: relative;
   overflow: hidden;
