@@ -55,7 +55,7 @@ export default function FileDrop({ setFile, uploadedFiles, setUploadedFiles }) {
         <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-purple-500 rounded-full blur-lg opacity-30"></div>
       </div>
       <p className="font-semibold text-readable-dark mb-1">Drag & Drop Files</p>
-      <p className="text-xs text-readable-light mb-2">IMG, PDF, DOCX, TXT</p>
+      <p className="text-xs text-readable-light mb-2">PDF, DOCX, TXT</p>
       <p className="text-xs text-readable-light my-2">or</p>
       <label className="cursor-pointer btn-gradient text-white text-sm font-bold py-2 px-6 rounded-lg transition-all duration-300 hover:scale-105">
         Browse Files

@@ -1,25 +1,14 @@
-Hackathon Project Guidelines
+Rule 1.1 – Eligibility
+Participants must adhere to the hackathon eligibility criteria as defined by the organizer.
 
-General Rules:
-- Projects should be innovative and solve real problems
-- Code should be well-documented and maintainable
-- Teams should work collaboratively and communicate effectively
-- Projects must be completed within the hackathon timeframe
+Rule 2.1 – Offline Demo Requirement
+All demos must run locally without relying on cloud APIs. Allowed: Ollama, local models, local files.
 
-Technical Requirements:
-- Use modern development practices and tools
-- Implement proper error handling and validation
-- Follow security best practices
-- Ensure code is production-ready and scalable
+Rule 3.1 – Submission Format
+Provide title, short description, project URL (optional), eligibility summary, technical stack (include Ollama + gpt‑oss‑20b), weekly timeline, and offline demo plan.
 
-Presentation Guidelines:
-- Create a compelling demo that showcases your solution
-- Prepare a clear pitch that explains the problem and solution
-- Highlight the technical implementation and innovation
-- Be ready to answer questions about your project
+Rule 4.1 – Team Size
+Teams of up to 4 members are allowed unless specified otherwise.
 
-Judging Criteria:
-- Innovation and creativity of the solution
-- Technical complexity and implementation quality
-- Potential impact and real-world applicability
-- Presentation and communication skills
+Rule 5.1 – Use of External Resources
+Open-source libraries are allowed with proper attribution. Do not use proprietary resources without license.

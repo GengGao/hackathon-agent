@@ -1,8 +1,10 @@
 import litellm
-from typing import Dict, AsyncGenerator, Union
+from typing import Dict, AsyncGenerator, Union, List, Any, Callable, Optional
 import asyncio
 import json
 from openai import AsyncOpenAI
+import json
+import os
 
 # ---------------------------------------------------------
 # Configuration – keep it in one place so you can switch later
@@ -21,49 +23,229 @@ client = AsyncOpenAI(
     api_key=DUMMY_API_KEY
 )
 
+# DEBUG_STREAM = os.getenv("DEBUG_STREAM", "0") in ("1", "true", "True")
+DEBUG_STREAM = True
 
-async def generate_stream(prompt: str,
+async def generate_stream(
+    prompt: str,
                          system: str = "",
                          temperature: float = 0.7,
-                         max_tokens: int = 1024) -> AsyncGenerator[Union[str, Dict], None]:
+    max_tokens: int = 1024,
+    tools: Optional[List[Dict[str, Any]]] = None,
+    execute_tool: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
+    max_tool_rounds: int = 5,
+    # Loop guards for reasoning/thinking tokens
+    max_reasoning_chars_per_round: int = 1000,
+    max_reasoning_repeats: int = 5,
+    max_reasoning_only_chunks: int = 100,
+) -> AsyncGenerator[Union[str, Dict], None]:
     """
     Async generator that yields tokens from the LLM response using OpenAI SDK directly.
-    Handles thinking responses from gpt-oss:20b model.
+    Handles thinking responses and streaming tool calls when available.
     """
-    messages = []
+    messages: List[Dict[str, Any]] = []
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
 
     try:
-
-        # Use OpenAI SDK directly for streaming
-        response = await client.chat.completions.create(
+        round_index = 0
+        while True:
+            round_index += 1
+            # Stream assistant response for this round
+            response = await client.chat.completions.create(
                 model=OLLAMA_MODEL,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
+                messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                stream=True
-        )
+                tools=tools if tools else None,
+                tool_choice="auto" if tools else None,
+                stream=True,
+            )
 
-        thinking_mode = False
-        buffer = ""
+            # Accumulate potential tool calls announced during streaming
+            tool_calls_args_buffers: Dict[int, str] = {}
+            tool_calls_names: Dict[int, str] = {}
+            tool_calls_ids: Dict[int, str] = {}
+            finish_reason: Optional[str] = None
 
-        async for chunk in response:
-            delta = chunk.choices[0].delta
+            any_yield_this_round = False
+            any_content_this_round = False
 
-            # Check for reasoning/thinking content first
-            if hasattr(delta, 'reasoning') and delta.reasoning:
-                yield {"type": "thinking", "content": delta.reasoning}
+            # Reasoning loop-guard state
+            reasoning_total_chars = 0
+            last_reasoning_norm: Optional[str] = None
+            reasoning_repeat_count = 0
+            suppress_reasoning = False
+            reasoning_only_counter = 0
+            seen_content_in_round = False
 
-            # Then check for regular content
-            if delta.content is not None and delta.content:
-                yield {"type": "content", "content": delta.content}
+            async for chunk in response:
+                choice = chunk.choices[0]
+                delta = choice.delta
+                finish_reason = getattr(choice, "finish_reason", None) or finish_reason
+                if DEBUG_STREAM:
+                    try:
+                        print("[stream] chunk: ", chunk.model_dump())
+                    except Exception:
+                        print("[stream] chunk received")
 
-        # If we get here, the model worked successfully
+                # Thinking parsing
+                reasoning_text = None
+                content_text = None
+                try:
+                    if hasattr(delta, 'reasoning') and delta.reasoning:
+                        reasoning_text = delta.reasoning
+                    if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                        reasoning_text = delta.reasoning_content
+                    if hasattr(delta, 'content') and delta.content:
+                        content_text = delta.content
+                except Exception:
+                    pass
+
+                if isinstance(delta, dict):
+                    reasoning_text = reasoning_text or delta.get('reasoning') or delta.get('reasoning_content')
+                    content_text = content_text or delta.get('content')
+
+                if reasoning_text and not seen_content_in_round:
+                    # Loop guard: normalize and track repeats/length
+                    norm = (reasoning_text or "").strip().lower().replace("  ", " ")
+                    if norm and norm == last_reasoning_norm:
+                        reasoning_repeat_count += 1
+                    else:
+                        reasoning_repeat_count = 0
+                        last_reasoning_norm = norm
+
+                    reasoning_total_chars += len(reasoning_text or "")
+                    reasoning_only_counter += 1 if not content_text else 0
+
+                    if (
+                        reasoning_total_chars > max_reasoning_chars_per_round
+                        or reasoning_repeat_count > max_reasoning_repeats
+                        or reasoning_only_counter > max_reasoning_only_chunks
+                    ):
+                        suppress_reasoning = True
+
+                    if not suppress_reasoning:
+                        any_yield_this_round = True
+                        yield {"type": "thinking", "content": reasoning_text}
+                if content_text:
+                    any_yield_this_round = True
+                    any_content_this_round = True
+                    # Reset reasoning-only counter when content appears
+                    reasoning_only_counter = 0
+                    seen_content_in_round = True
+                    yield {"type": "content", "content": content_text}
+
+                # Tool calls (streaming) parsing
+                tool_calls_delta = None
+                try:
+                    if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                        tool_calls_delta = delta.tool_calls
+                except Exception:
+                    pass
+                if tool_calls_delta is None and isinstance(delta, dict):
+                    tool_calls_delta = delta.get('tool_calls')
+
+                if tool_calls_delta:
+                    for tc in tool_calls_delta:
+                        try:
+                            idx = getattr(tc, 'index', None)
+                            func = getattr(tc, 'function', None)
+                            tc_id = getattr(tc, 'id', None)
+                            # When using dicts
+                            if idx is None and isinstance(tc, dict):
+                                idx = tc.get('index')
+                                func = tc.get('function')
+                                tc_id = tc.get('id', tc_id)
+                            if idx is None:
+                                continue
+                            name_val = None
+                            args_val = None
+                            if func is not None:
+                                # object style
+                                if hasattr(func, 'name'):
+                                    name_val = func.name
+                                if hasattr(func, 'arguments'):
+                                    args_val = func.arguments
+                                # dict style
+                                if isinstance(func, dict):
+                                    name_val = name_val or func.get('name')
+                                    args_val = args_val or func.get('arguments')
+                            if name_val is not None:
+                                tool_calls_names[idx] = name_val
+                            if args_val is not None:
+                                tool_calls_args_buffers[idx] = tool_calls_args_buffers.get(idx, '') + (args_val or '')
+                            if tc_id:
+                                tool_calls_ids[idx] = tc_id
+                        except Exception:
+                            continue
+
+            # If nothing was yielded and no tool calls were announced, try a non-stream fallback
+            if not any_yield_this_round and not tool_calls_args_buffers:
+                try:
+                    fallback = await client.chat.completions.create(
+                        model=OLLAMA_MODEL,
+                        messages=messages,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        tools=None,
+                        stream=False,
+                    )
+                    content = fallback.choices[0].message.content or ""
+                    if content:
+                        yield {"type": "content", "content": content}
+                except Exception:
+                    pass
+
+            # If we only saw thinking (no content) and no tool calls, ask once more non-stream for final content
+            if any_yield_this_round and not any_content_this_round and not tool_calls_args_buffers:
+                try:
+                    fallback2 = await client.chat.completions.create(
+                        model=OLLAMA_MODEL,
+                        messages=messages,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        tools=None,
+                        stream=False,
+                    )
+                    content2 = fallback2.choices[0].message.content or ""
+                    if content2:
+                        yield {"type": "content", "content": content2}
+                except Exception:
+                    pass
+
+            # After streaming round ends, decide whether to execute tools
+            if tool_calls_args_buffers and execute_tool and round_index <= max_tool_rounds:
+                # Append assistant tool_calls message
+                tool_calls_list = []
+                for idx, args_str in tool_calls_args_buffers.items():
+                    tool_calls_list.append({
+                        "id": tool_calls_ids.get(idx, f"call_{round_index}_{idx}"),
+                        "type": "function",
+                        "function": {"name": tool_calls_names.get(idx, ""), "arguments": args_str or "{}"},
+                    })
+                messages.append({"role": "assistant", "content": "", "tool_calls": tool_calls_list})
+
+                # Execute and append tool results
+                for tc in tool_calls_list:
+                    fn = tc["function"]["name"]
+                    raw_args = tc["function"]["arguments"] or "{}"
+                    try:
+                        args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                    except Exception:
+                        args = {}
+                    result = execute_tool(fn, args)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": json.dumps(result, ensure_ascii=False),
+                    })
+                # Continue next round to produce final content (or further tool calls)
+                continue
+            else:
+                break
+
         return
 
     except Exception as e:

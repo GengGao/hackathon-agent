@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from typing import List, Dict, Any
 from llm import generate_stream
 from rag import RuleRAG
+from tools import get_tool_schemas, call_tool, list_todos, add_todo, clear_todos
 from pathlib import Path
 import json, io
 import pdfminer.high_level
@@ -23,9 +24,6 @@ def extract_text_from_file(file: UploadFile) -> str:
     elif filename.endswith('.docx') or filename.endswith('.doc'):
         doc = docx.Document(io.BytesIO(content))
         return "\n".join([p.text for p in doc.paragraphs])
-    elif filename.endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
-        img = Image.open(io.BytesIO(content))
-        return pytesseract.image_to_string(img)
     else:
         # Assume plain text
         return content.decode('utf-8', errors='ignore')
@@ -61,45 +59,87 @@ async def chat_stream(
     rule_hits = rag.retrieve(user_input, k=5)
     rule_text = "\n".join([f"Rule Chunk {i+1}:\n{chunk}" for i, (chunk, _) in enumerate(rule_hits)])
 
-    # Build system prompt for the LLM
-    system_prompt = f"""You are **HackathonGPT**, an expert assistant that helps participants create, refine, and submit hackathon projects completely offline.
+    # Build system prompt for the LLM (explicit tool usage guidance added)
+    system_prompt = f"""You are **HackathonHero**, an expert assistant that helps participants create, refine, and submit hackathon projects completely offline.
 
-    - Use ONLY the information supplied in the {rule_text} (the official competition rules you have been given as factual reference). Do not hallucinate external policies.
-    - When a user asks for an idea, suggest 3–5 distinct concepts that can be built with *gpt‑oss‑20b* locally and that satisfy the "Best Local Agent" category.
-    - When checking compliance, quote the exact rule number (e.g., "Rule 4.1 – Eligibility") and explain if the draft violates it.
-    - When building a submission, fill in the required fields:
-    * Title (≤ 100 chars)
-    * Short description (≤ 300 words)
-    * Project URL (optional)
-    * Eligibility summary
-    * Technical stack (must include Ollama + gpt‑oss‑20b)
-    * Timeline (weekly milestones)
-    * How the project will be demonstrated offline.
+    You have access to function-calling tools. Use them when they clearly help the user:
+    - Use add_todo to add actionable tasks to the project To-Do list.
+    - Use list_todos to recall current tasks and trust its output. Present the items without speculation or self-correction.
+    - Use clear_todos to reset the task list when asked.
+    - Use list_directory to explore local files when requested.
+
+    Rules context (authoritative):
+    {rule_text}
+
+    Guidance:
+    - Prefer using tools to perform actions instead of describing actions.
+    - When planning work, convert steps into separate add_todo calls.
     - Keep the tone clear, concise, and encouraging. Do not mention any external APIs or internet resources.
-    - When responding, cite the rule chunk numbers in brackets if you refer to a specific rule."""
+    - Cite rule chunk numbers in brackets if you refer to a specific rule."""
 
-    # Assemble final prompt
-    full_prompt = "\n".join(context_parts + [user_input])
+    # Build messages for tool-enabled streaming
+    tools = get_tool_schemas()
+    messages: List[Dict[str, Any]] = [
+        {"role": "system", "content": system_prompt + "\n\n" + rule_text},
+        {"role": "user", "content": "\n".join(context_parts + [user_input])},
+    ]
 
     async def token_generator():
         # Send rule chunks first
         yield f"data: {json.dumps({'type': 'rule_chunks', 'rule_chunks': [c for c,_ in rule_hits]})}\n\n"
 
-        # `generate_stream` now yields both thinking and content data
-        async for data in generate_stream(full_prompt, system=system_prompt):
+        # Stream the assistant response, surface tool_calls events to UI as info
+        async for data in generate_stream(
+            "\n".join(context_parts + [user_input]),
+            system=system_prompt + "\n\n" + rule_text,
+            tools=tools,
+            execute_tool=lambda fn, args: call_tool(fn, args),
+        ):
             if isinstance(data, dict):
-                # New format: {"type": "thinking", "content": "..."} or {"type": "content", "content": "..."}
                 if data.get("type") == "thinking":
-                    yield f"data: {json.dumps({'type': 'thinking', 'content': data['content']})}\n\n"
+                    # Throttle thinking tokens minimally to avoid flooding
+                    yield f"data: {json.dumps({'type': 'thinking', 'content': data.get('content')})}\n\n"
+                elif data.get("type") == "tool_calls":
+                    yield f"data: {json.dumps({'type': 'tool_calls', 'tool_calls': data.get('tool_calls', [])})}\n\n"
                 elif data.get("type") == "content" and data.get("content"):
                     yield f"data: {json.dumps({'type': 'token', 'token': data['content']})}\n\n"
             elif isinstance(data, str) and data:
-                # Backward compatibility: plain string tokens
                 yield f"data: {json.dumps({'type': 'token', 'token': data})}\n\n"
 
-        # Send end marker
         yield f"data: {json.dumps({'type': 'end'})}\n\n"
 
     return StreamingResponse(token_generator(), media_type="text/event-stream")
 
 
+
+
+
+@router.get("/todos")
+def get_todos():
+    return {"todos": list_todos()}
+
+
+@router.post("/todos")
+def post_todo(item: str = Form(...)):
+    res = add_todo(item)
+    return {"ok": res.get("ok", True), "todos": list_todos()}
+
+
+@router.delete("/todos")
+def delete_todos():
+    res = clear_todos()
+    return {"ok": res.get("ok", True)}
+
+
+@router.post("/rules")
+def upload_rules(file: UploadFile = File(...)):
+    """
+    Replace the current rules file used by RAG.
+    """
+    target = Path(__file__).parent / "docs" / "rules.txt"
+    content = file.file.read()
+    target.write_bytes(content)
+    # Reload RAG index
+    global rag
+    rag = RuleRAG(target)
+    return {"ok": True}

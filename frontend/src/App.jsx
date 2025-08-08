@@ -39,88 +39,86 @@ function App() {
     setAbortController(controller);
 
     try {
-      const response = await fetch(
-        `${axios.defaults.baseURL}/api/chat-stream`,
-        {
-          method: "POST",
-          body: form,
-          signal: controller.signal,
+      {
+        const response = await fetch(
+          `${axios.defaults.baseURL}/api/chat-stream`,
+          {
+            method: "POST",
+            body: form,
+            signal: controller.signal,
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
-      );
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let currentContent = "";
+        let currentThinking = "";
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let currentContent = "";
-      let currentThinking = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (line.trim() && line.startsWith("data: ")) {
+              try {
+                const data = JSON.parse(line.slice(6));
 
-        for (const line of lines) {
-          if (line.trim() && line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-
-              if (data.type === "rule_chunks") {
-                setMessages((prev) => {
-                  const newMessages = [...prev];
-                  const assistantMessageIndex = newMessages.length - 1;
-                  if (
-                    newMessages[assistantMessageIndex] &&
-                    newMessages[assistantMessageIndex].role === "assistant"
-                  ) {
-                    newMessages[assistantMessageIndex].rule_chunks =
-                      data.rule_chunks;
-                  }
-                  return newMessages;
-                });
-              } else if (data.type === "thinking") {
-                // Handle thinking/reasoning content
-                currentThinking += data.content;
-                setMessages((prev) => {
-                  const newMessages = [...prev];
-                  const assistantMessageIndex = newMessages.length - 1;
-                  if (
-                    newMessages[assistantMessageIndex] &&
-                    newMessages[assistantMessageIndex].role === "assistant"
-                  ) {
-                    newMessages[assistantMessageIndex].thinking =
-                      currentThinking;
-                  }
-                  return newMessages;
-                });
-              } else if (data.type === "token") {
-                // Debug: log the token being received
-                console.log("Received token:", data.token);
-                currentContent += data.token;
-                setMessages((prev) => {
-                  const newMessages = [...prev];
-                  const assistantMessageIndex = newMessages.length - 1;
-                  if (
-                    newMessages[assistantMessageIndex] &&
-                    newMessages[assistantMessageIndex].role === "assistant"
-                  ) {
-                    newMessages[assistantMessageIndex].content = currentContent;
-                  }
-                  return newMessages;
-                });
-              } else if (data.type === "end") {
-                // Streaming complete
-                setIsTyping(false);
-                break;
+                if (data.type === "rule_chunks") {
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const assistantMessageIndex = newMessages.length - 1;
+                    if (
+                      newMessages[assistantMessageIndex] &&
+                      newMessages[assistantMessageIndex].role === "assistant"
+                    ) {
+                      newMessages[assistantMessageIndex].rule_chunks =
+                        data.rule_chunks;
+                    }
+                    return newMessages;
+                  });
+                } else if (data.type === "thinking") {
+                  currentThinking += data.content;
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const assistantMessageIndex = newMessages.length - 1;
+                    if (
+                      newMessages[assistantMessageIndex] &&
+                      newMessages[assistantMessageIndex].role === "assistant"
+                    ) {
+                      newMessages[assistantMessageIndex].thinking =
+                        currentThinking;
+                    }
+                    return newMessages;
+                  });
+                } else if (data.type === "token") {
+                  currentContent += data.token;
+                  setMessages((prev) => {
+                    const newMessages = [...prev];
+                    const assistantMessageIndex = newMessages.length - 1;
+                    if (
+                      newMessages[assistantMessageIndex] &&
+                      newMessages[assistantMessageIndex].role === "assistant"
+                    ) {
+                      newMessages[assistantMessageIndex].content = currentContent;
+                    }
+                    return newMessages;
+                  });
+                } else if (data.type === "end") {
+                  setIsTyping(false);
+                  break;
+                }
+              } catch (e) {
+                console.error("Error parsing SSE data:", e, "Line:", line);
               }
-            } catch (e) {
-              console.error("Error parsing SSE data:", e, "Line:", line);
             }
           }
         }
@@ -192,16 +190,18 @@ function App() {
   };
 
   const updateDashboard = async () => {
-    setDashboardData({
-      idea: "Sample project idea based on conversation",
-      stack: "React, Node.js, Python",
-      todos: [
-        "Set up development environment",
-        "Create wireframes",
-        "Implement core features",
-      ],
-      submission: "Project notes and submission guidelines",
-    });
+    try {
+      const res = await fetch(`${axios.defaults.baseURL}/api/todos`);
+      const data = await res.json();
+      setDashboardData({
+        idea: "Derived from your latest chat.",
+        stack: "React, FastAPI, Ollama",
+        todos: (data.todos && data.todos.length > 0) ? data.todos : ["No tasks yet."],
+        submission: "Use the chat to build your submission.",
+      });
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   return (
@@ -214,13 +214,15 @@ function App() {
             <div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-purple-500 rounded-full blur-sm opacity-30"></div>
           </div>
           <h1 className="text-xl font-bold gradient-text">
-            Local Hackathon Agent
+            HackathonHero
           </h1>
         </div>
-        <span className="text-sm font-medium text-green-600 flex items-center glass-effect px-3 py-1 rounded-full text-readable-dark">
-          <i className="fas fa-circle text-xs mr-2 animate-pulse text-green-500"></i>
-          gpt-oss-20b | Local & Offline
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-green-600 flex items-center glass-effect px-3 py-1 rounded-full text-readable-dark">
+            <i className="fas fa-circle text-xs mr-2 animate-pulse text-green-500"></i>
+            gpt-oss-20b | Local & Offline
+          </span>
+        </div>
       </header>
 
       {/* Main Content */}

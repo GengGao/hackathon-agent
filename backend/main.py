@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from router import router
 
 app = FastAPI(
-    title="Local Hackathon Agent",
+    title="HackathonHero",
     description="Zero‑to‑hero offline assistant for hackathon idea → submission.",
     version="0.1.0"
 )

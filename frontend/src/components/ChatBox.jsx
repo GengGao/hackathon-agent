@@ -34,7 +34,7 @@ export default function ChatBox({
         {messages.length === 0 && (
           <div className="flex justify-start mb-4">
             <div className="chat-bubble chat-bubble-agent p-4 rounded-xl max-w-md">
-              <p className="font-bold mb-2 gradient-text">Hackathon Agent</p>
+              <p className="font-bold mb-2 gradient-text">HackathonHero</p>
               <p className="text-readable-dark">
                 Hello! I'm your local hackathon assistant. To get started,
                 please add the hackathon rules or your initial ideas in the
@@ -58,7 +58,7 @@ export default function ChatBox({
               }`}
             >
               {msg.role === "assistant" && (
-                <p className="font-bold mb-2 gradient-text">Hackathon Agent</p>
+                <p className="font-bold mb-2 gradient-text">HackathonHero</p>
               )}
               {msg.role === "assistant" && msg.thinking && (
                 <div className="dropzone mb-3 p-3 rounded-lg">
