@@ -486,7 +486,7 @@ function App() {
 		try {
 			const response = await fetch(`/api/chat-sessions/${sessionId}`);
 			if (!response.ok) throw new Error(response.statusText);
-			const { session, messages: chatMessages } = await response.json();
+            const { messages: chatMessages } = await response.json();
 
 			setCurrentSessionId(sessionId);
 			setMessages(
@@ -518,7 +518,7 @@ function App() {
 	return (
 		<div className="text-gray-800 flex flex-col h-screen overflow-hidden">
 			{/* Header */}
-			<header className="bg-white shadow-lg p-4 flex justify-between items-center border-b border-white/20 shrink-0">
+			<header className="bg-white shadow-lg p-4 flex justify-between items-center border-b border-white/20 shrink-0 h-[50px]">
 				<div className="flex items-center">
 					<div className="relative">
 						<i className="fas fa-brain text-2xl gradient-text mr-3" />
@@ -691,15 +691,16 @@ function App() {
 							setUploadedFiles={setUploadedFiles}
 						/>
 
-						<textarea
+                        <textarea
+							name="user-context"
 							placeholder="Or paste text/URLs here..."
-							className="w-full mt-4 p-2 border border-white/20 rounded-lg h-32 text-sm enhanced-input placeholder-gray-500"
+                            className="context-textarea w-full mt-4 border border-white/20 text-sm enhanced-input placeholder-gray-500"
 							value={urlText}
 							onChange={(e) => setUrlText(e.target.value)}
 						/>
 						<button
 							onClick={setContext}
-							className="mt-2 w-full btn-gradient font-bold py-2 px-4 rounded-lg transition-all duration-300"
+                            className="context-button mt-2 btn-gradient font-bold px-4 transition-all duration-300"
 							type="button"
 						>
 							<i className="fas fa-check-circle mr-2" />
