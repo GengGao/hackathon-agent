@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export default function FileDrop({ setFile, uploadedFiles, setUploadedFiles }) {
+export default function FileDrop({ uploadedFiles, setUploadedFiles }) {
   const [isDragOver, setIsDragOver] = useState(false);
 
   const handleDrop = (e) => {
@@ -33,10 +33,10 @@ export default function FileDrop({ setFile, uploadedFiles, setUploadedFiles }) {
           const newFile = {
             name: file.name,
             type: file.type,
-            content: e.target.result // Base64 encoded content
+            content: e.target.result, // Base64 (for preview/future use)
+            raw: file
           };
           setUploadedFiles(prev => [...prev, newFile]);
-          setFile(file); // Keep the original file for backward compatibility
         };
         reader.readAsDataURL(file);
       }

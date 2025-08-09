@@ -60,7 +60,7 @@ export default function ChatBox({
         )}
         {messages.map((msg, i) => (
           <div
-            key={i}
+            key={`${currentSessionId}-msg-${i}`}
             className={`flex mb-4 ${
               msg.role === "assistant" ? "justify-start" : "justify-end"
             }`}
@@ -86,6 +86,21 @@ export default function ChatBox({
                   <p className="text-xs text-gray-600 italic font-mono leading-relaxed">
                     {msg.thinking}
                   </p>
+                </div>
+              )}
+              {msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0 && (
+                <div className="mb-3 p-3 rounded-lg bg-blue-50 border border-blue-200">
+                  <div className="flex items-center mb-2">
+                    <i className="fas fa-tools text-blue-500 mr-2" />
+                    <span className="text-xs font-semibold text-blue-600">Tool Calls</span>
+                  </div>
+                  <ul className="text-xs text-blue-700 space-y-1">
+                    {msg.tool_calls.map((tc, idx) => (
+                      <li key={`tool-call-${idx}`} className="font-mono truncate">
+                        {tc.name}({tc.arguments && tc.arguments.length > 80 ? tc.arguments.slice(0,80) + '…' : tc.arguments})
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               )}
               <div className="message-content">

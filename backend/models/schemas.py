@@ -88,3 +88,32 @@ class ChatMessage(BaseModel):
         )
 
 
+class ProjectArtifact(BaseModel):
+    id: int | None = Field(default=None)
+    session_id: str
+    artifact_type: str  # 'project_idea', 'tech_stack', 'submission_summary'
+    content: str
+    metadata: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+    @classmethod
+    def from_row(cls, row) -> "ProjectArtifact":
+        metadata = None
+        if row["metadata"]:
+            try:
+                metadata = json.loads(row["metadata"])
+            except (json.JSONDecodeError, TypeError):
+                metadata = None
+
+        return cls(
+            id=row["id"],
+            session_id=row["session_id"],
+            artifact_type=row["artifact_type"],
+            content=row["content"],
+            metadata=metadata,
+            created_at=row.get("created_at") if hasattr(row, "get") else row["created_at"],
+            updated_at=row.get("updated_at") if hasattr(row, "get") else row["updated_at"],
+        )
+
+

@@ -20,9 +20,18 @@ AVAILABLE_MODELS = []
 current_model = OLLAMA_MODEL
 
 async def initialize_models():
-    """Initialize available models on startup."""
+    """Initialize available models on startup and attempt to restore persisted selection."""
     await fetch_available_models()
-    print(f"Initialized models: {AVAILABLE_MODELS}")
+    # Attempt restore
+    try:
+        from models.db import get_setting  # local import to avoid circular
+        saved = get_setting("current_model")
+        if saved and saved in AVAILABLE_MODELS:
+            global current_model
+            current_model = saved
+    except Exception as e:
+        print(f"[initialize_models] restore failed: {e}")
+    print(f"Initialized models: {AVAILABLE_MODELS}; current={current_model}")
 
 async def fetch_available_models():
     """Fetch available models from Ollama and update AVAILABLE_MODELS."""
@@ -49,8 +58,8 @@ client = AsyncOpenAI(
     api_key=DUMMY_API_KEY
 )
 
-# DEBUG_STREAM = os.getenv("DEBUG_STREAM", "0") in ("1", "true", "True")
-DEBUG_STREAM = True
+# Debug streaming disabled by default; enable with DEBUG_STREAM=1/true/yes
+DEBUG_STREAM = os.getenv("DEBUG_STREAM", "0").lower() in ("1", "true", "yes")
 
 async def generate_stream(
     prompt: str,
@@ -59,11 +68,11 @@ async def generate_stream(
     max_tokens: int = 1024,
     tools: Optional[List[Dict[str, Any]]] = None,
     execute_tool: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
-    max_tool_rounds: int = 5,
+    max_tool_rounds: int = 10,
     # Loop guards for reasoning/thinking tokens
     max_reasoning_chars_per_round: int = 1000,
-    max_reasoning_repeats: int = 5,
-    max_reasoning_only_chunks: int = 100,
+    max_reasoning_repeats: int = 10,
+    max_reasoning_only_chunks: int = 200,
 ) -> AsyncGenerator[Union[str, Dict], None]:
     """
     Async generator that yields tokens from the LLM response using OpenAI SDK directly.
@@ -253,6 +262,15 @@ async def generate_stream(
                     })
                 messages.append({"role": "assistant", "content": "", "tool_calls": tool_calls_list})
 
+                # Yield tool_calls event for UI transparency
+                yield {"type": "tool_calls", "tool_calls": [
+                    {
+                        "id": tc["id"],
+                        "name": tc["function"]["name"],
+                        "arguments": tc["function"].get("arguments", "{}")
+                    } for tc in tool_calls_list
+                ]}
+
                 # Execute and append tool results
                 for tc in tool_calls_list:
                     fn = tc["function"]["name"]
@@ -312,17 +330,19 @@ def get_available_models():
 
 
 async def set_model(model_name: str):
-    """Set the model to use for generation."""
+    """Set the model to use for generation and persist selection."""
     global current_model
-
-    # Refresh available models from Ollama to ensure we have the latest list
     try:
         await fetch_available_models()
     except Exception:
-        pass  # Continue with cached models if fetch fails
-
+        pass
     if model_name in AVAILABLE_MODELS:
         current_model = model_name
+        try:
+            from models.db import set_setting
+            set_setting("current_model", model_name)
+        except Exception as e:
+            print(f"[set_model] persist failed: {e}")
         return True
     return False
 

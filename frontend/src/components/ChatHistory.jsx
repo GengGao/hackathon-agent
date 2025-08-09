@@ -1,4 +1,3 @@
-import axios from "axios";
 import { useEffect, useState } from "react";
 
 export default function ChatHistory({
@@ -15,8 +14,10 @@ export default function ChatHistory({
   const loadSessions = async () => {
     try {
       setLoading(true);
-      const response = await axios.get("/api/chat-sessions");
-      setSessions(response.data.sessions);
+      const res = await fetch('/api/chat-sessions');
+      if (!res.ok) throw new Error(res.statusText);
+      const data = await res.json();
+      setSessions(data.sessions || []);
     } catch (error) {
       console.error("Failed to load chat sessions:", error);
     } finally {
@@ -31,27 +32,24 @@ export default function ChatHistory({
   const handleEditTitle = async (sessionId, newTitle) => {
     try {
       const formData = new FormData();
-      formData.append("title", newTitle);
-      await axios.put(`/api/chat-sessions/${sessionId}/title`, formData);
+      formData.append('title', newTitle);
+      const res = await fetch(`/api/chat-sessions/${sessionId}/title`, { method: 'PUT', body: formData });
+      if (!res.ok) throw new Error(res.statusText);
       await loadSessions();
       setEditingSessionId(null);
-      setEditTitle("");
+      setEditTitle('');
     } catch (error) {
       console.error("Failed to update session title:", error);
     }
   };
 
   const handleDeleteSession = async (sessionId) => {
-    if (!confirm("Are you sure you want to delete this chat session?")) {
-      return;
-    }
-
+    if (!confirm("Are you sure you want to delete this chat session?")) return;
     try {
-      await axios.delete(`/api/chat-sessions/${sessionId}`);
+      const res = await fetch(`/api/chat-sessions/${sessionId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(res.statusText);
       await loadSessions();
-      if (onDeleteSession) {
-        onDeleteSession(sessionId);
-      }
+      onDeleteSession && onDeleteSession(sessionId);
     } catch (error) {
       console.error("Failed to delete session:", error);
     }

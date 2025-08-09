@@ -8,7 +8,7 @@ pydantic
 python-dotenv
 pdfminer.six
 python-docx
-pytesseract   # optional
+pytesseract   # optional (used for image OCR in multi-file ingestion)
 Pillow
 litellm
 openai

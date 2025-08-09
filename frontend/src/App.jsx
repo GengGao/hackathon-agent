@@ -1,15 +1,13 @@
-import axios from "axios";
 import { useEffect, useState } from "react";
 import ChatBox from "./components/ChatBox";
 import ChatHistory from "./components/ChatHistory";
 import FileDrop from "./components/FileDrop";
+import TodoManager from "./components/TodoManager";
 
-// Use same-origin paths so the service worker can intercept and cache
-axios.defaults.baseURL = "";
+// All network requests use native fetch (axios removed)
 
 function App() {
   const [messages, setMessages] = useState([]);
-  const [file, setFile] = useState(null);
   const [urlText, setUrlText] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
@@ -32,15 +30,13 @@ function App() {
   // Check Ollama status
   const checkOllamaStatus = async () => {
     try {
-      const response = await axios.get("/api/ollama/status");
-      setOllamaStatus(response.data);
+      const res = await fetch('/api/ollama/status');
+      if (!res.ok) throw new Error(res.statusText);
+      const data = await res.json();
+      setOllamaStatus(data);
     } catch (error) {
       console.error("Failed to check Ollama status:", error);
-      setOllamaStatus({
-        connected: false,
-        model: "gpt-oss:20b",
-        available_models: []
-      });
+      setOllamaStatus({ connected: false, model: "gpt-oss:20b", available_models: [] });
     }
   };
 
@@ -49,11 +45,14 @@ function App() {
     try {
       const formData = new FormData();
       formData.append("model", model);
-
-      const response = await axios.post("/api/ollama/model", formData);
-      if (response.data.ok) {
-        setOllamaStatus(prev => ({ ...prev, model: response.data.model }));
+      const res = await fetch('/api/ollama/model', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error(res.statusText);
+      const data = await res.json();
+      if (data.ok) {
+        setOllamaStatus(prev => ({ ...prev, model: data.model }));
         setShowModelPicker(false);
+      } else {
+        console.warn('Model change rejected', data);
       }
     } catch (error) {
       console.error("Failed to change model:", error);
@@ -84,7 +83,14 @@ function App() {
   const sendMessage = async (text) => {
     const form = new FormData();
     form.append("user_input", text);
-    if (file) form.append("file", file);
+    // Multi-file support: append each uploaded raw File under 'files'
+    if (uploadedFiles && uploadedFiles.length > 0) {
+      uploadedFiles.forEach((uf) => {
+        if (uf.raw instanceof File) {
+          form.append('files', uf.raw);
+        }
+      });
+    }
     if (urlText) form.append("url_text", urlText);
     if (currentSessionId) form.append("session_id", currentSessionId);
 
@@ -94,101 +100,74 @@ function App() {
     // Add assistant message placeholder
     setMessages((prev) => [
       ...prev,
-      { role: "assistant", content: "", thinking: "", rule_chunks: [] },
+  { role: "assistant", content: "", thinking: "", rule_chunks: [], tool_calls: [] },
     ]);
 
     // Create abort controller for this request
     const controller = new AbortController();
     setAbortController(controller);
+    setIsTyping(true); // ensure typing state on
 
     try {
-      {
-        const response = await fetch(
-          `/api/chat-stream`,
-          {
-            method: "POST",
-            body: form,
-            signal: controller.signal,
-          }
-        );
+      // Use native fetch directly for SSE streaming (axios buffers, so avoid it)
+      const response = await fetch('/api/chat-stream', {
+        method: 'POST',
+        body: form,
+        signal: controller.signal,
+        headers: { 'Accept': 'text/event-stream' }
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let currentContent = '';
+      let currentThinking = '';
+
+      const processEvent = (rawEvent) => {
+        // Remove any leading colon heartbeat lines
+        if (!rawEvent.trim()) return;
+        const dataLines = rawEvent.split('\n').filter(l => l.startsWith('data:'));
+        if (dataLines.length === 0) return;
+        const jsonStr = dataLines.map(l => l.replace(/^data:\s?/, '')).join('\n');
+        try {
+          const data = JSON.parse(jsonStr);
+          if (data.type === 'session_info') {
+            setCurrentSessionId(data.session_id);
+          } else if (data.type === 'rule_chunks') {
+            setMessages(prev => { const nm=[...prev]; const i=nm.length-1; if(nm[i]?.role==='assistant') nm[i].rule_chunks=data.rule_chunks; return nm; });
+          } else if (data.type === 'thinking') {
+            currentThinking += data.content || '';
+            setMessages(prev => { const nm=[...prev]; const i=nm.length-1; if(nm[i]?.role==='assistant') nm[i].thinking=currentThinking; return nm; });
+          } else if (data.type === 'tool_calls') {
+            setMessages(prev => { const nm=[...prev]; const i=nm.length-1; if(nm[i]?.role==='assistant'){ const existing=nm[i].tool_calls||[]; const merged=[...existing]; for(const tc of data.tool_calls||[]){ const dup=merged.some(e=> (tc.id && e.id===tc.id) || (e.name===tc.name && e.arguments===tc.arguments)); if(!dup) merged.push(tc);} nm[i].tool_calls=merged; } return nm; });
+          } else if (data.type === 'token') {
+            currentContent += data.token || '';
+            setMessages(prev => { const nm=[...prev]; const i=nm.length-1; if(nm[i]?.role==='assistant') nm[i].content=currentContent; return nm; });
+          } else if (data.type === 'end') {
+            setIsTyping(false);
+          }
+        } catch(err){
+          console.error('Failed to parse SSE event', err, rawEvent);
         }
+      };
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        let currentContent = "";
-        let currentThinking = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            if (line.trim() && line.startsWith("data: ")) {
-              try {
-                const data = JSON.parse(line.slice(6));
-
-                if (data.type === "session_info") {
-                  // Update current session ID from backend
-                  setCurrentSessionId(data.session_id);
-                } else if (data.type === "rule_chunks") {
-                  setMessages((prev) => {
-                    const newMessages = [...prev];
-                    const assistantMessageIndex = newMessages.length - 1;
-                    if (
-                      newMessages[assistantMessageIndex] &&
-                      newMessages[assistantMessageIndex].role === "assistant"
-                    ) {
-                      newMessages[assistantMessageIndex].rule_chunks =
-                        data.rule_chunks;
-                    }
-                    return newMessages;
-                  });
-                } else if (data.type === "thinking") {
-                  currentThinking += data.content;
-                  setMessages((prev) => {
-                    const newMessages = [...prev];
-                    const assistantMessageIndex = newMessages.length - 1;
-                    if (
-                      newMessages[assistantMessageIndex] &&
-                      newMessages[assistantMessageIndex].role === "assistant"
-                    ) {
-                      newMessages[assistantMessageIndex].thinking =
-                        currentThinking;
-                    }
-                    return newMessages;
-                  });
-                } else if (data.type === "token") {
-                  currentContent += data.token;
-                  setMessages((prev) => {
-                    const newMessages = [...prev];
-                    const assistantMessageIndex = newMessages.length - 1;
-                    if (
-                      newMessages[assistantMessageIndex] &&
-                      newMessages[assistantMessageIndex].role === "assistant"
-                    ) {
-                      newMessages[assistantMessageIndex].content = currentContent;
-                    }
-                    return newMessages;
-                  });
-                } else if (data.type === "end") {
-                  setIsTyping(false);
-                  break;
-                }
-              } catch (e) {
-                console.error("Error parsing SSE data:", e, "Line:", line);
-              }
-            }
-          }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // SSE events separated by double newlines
+        let idx;
+        while ((idx = buffer.indexOf('\n\n')) !== -1) {
+          const eventBlock = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+            processEvent(eventBlock);
         }
       }
+      // Flush remaining (if any)
+      if (buffer.trim()) processEvent(buffer);
+      setIsTyping(false);
+      setAbortController(null);
     } catch (e) {
       if (e.name === 'AbortError') {
         // Request was aborted
@@ -263,31 +242,109 @@ function App() {
 
   const updateDashboard = async () => {
     try {
-      const res = await fetch(`/api/todos`);
-      const data = await res.json();
+  // Get todos
+  const todosRes = await fetch(`/api/todos`);
+  const todosData = todosRes.ok ? await todosRes.json() : { todos: [] };
+
+      // Get project artifacts if we have a session
+      let artifacts = {};
+      if (currentSessionId) {
+        try {
+          const artifactsRes = await fetch(`/api/chat-sessions/${currentSessionId}/project-artifacts`);
+          if (artifactsRes.ok) {
+            const artifactsData = await artifactsRes.json();
+            artifacts = (artifactsData.artifacts || []).reduce((acc, artifact) => { acc[artifact.artifact_type] = artifact; return acc; }, {});
+          } else {
+            console.log('Artifacts fetch failed', artifactsRes.status);
+          }
+        } catch (artifactError) {
+          console.log("No artifacts found yet:", artifactError);
+        }
+      }
+
       setDashboardData({
-        idea: "Derived from your latest chat.",
-        stack: "React, FastAPI, Ollama",
-        todos: (data.todos && data.todos.length > 0) ? data.todos : ["No tasks yet."],
-        submission: "Use the chat to build your submission.",
+        idea: artifacts.project_idea?.content || "Generate a project idea from your chat history using the tools below.",
+        stack: artifacts.tech_stack?.content || "Generate a tech stack recommendation from your conversation.",
+        todos: (todosData.todos && todosData.todos.length > 0) ? todosData.todos : ["No tasks yet."],
+        submission: artifacts.submission_summary?.content || "Generate submission notes from your chat history when ready.",
       });
     } catch (e) {
       console.error(e);
     }
   };
 
+  const generateProjectIdea = async () => {
+    if (!currentSessionId) {
+      alert("Please start a chat session first");
+      return;
+    }
+
+    try {
+  const response = await fetch(`/api/chat-sessions/${currentSessionId}/derive-project-idea`, { method: 'POST' });
+      const data = await response.json();
+      if (data.ok) {
+        updateDashboard(); // Refresh dashboard with new data
+      } else {
+        alert("Failed to generate project idea: " + (data.error || "Unknown error"));
+      }
+    } catch (error) {
+      console.error("Error generating project idea:", error);
+      alert("Failed to generate project idea");
+    }
+  };
+
+  const generateTechStack = async () => {
+    if (!currentSessionId) {
+      alert("Please start a chat session first");
+      return;
+    }
+
+    try {
+  const response = await fetch(`/api/chat-sessions/${currentSessionId}/create-tech-stack`, { method: 'POST' });
+      const data = await response.json();
+      if (data.ok) {
+        updateDashboard(); // Refresh dashboard with new data
+      } else {
+        alert("Failed to generate tech stack: " + (data.error || "Unknown error"));
+      }
+    } catch (error) {
+      console.error("Error generating tech stack:", error);
+      alert("Failed to generate tech stack");
+    }
+  };
+
+  const generateSubmissionNotes = async () => {
+    if (!currentSessionId) {
+      alert("Please start a chat session first");
+      return;
+    }
+
+    try {
+  const response = await fetch(`/api/chat-sessions/${currentSessionId}/summarize-chat-history`, { method: 'POST' });
+      const data = await response.json();
+      if (data.ok) {
+        updateDashboard(); // Refresh dashboard with new data
+      } else {
+        alert("Failed to generate submission notes: " + (data.error || "Unknown error"));
+      }
+    } catch (error) {
+      console.error("Error generating submission notes:", error);
+      alert("Failed to generate submission notes");
+    }
+  };
+
   const handleNewChat = () => {
     setCurrentSessionId(null);
     setMessages([]);
-    setFile(null);
     setUrlText("");
     setUploadedFiles([]);
   };
 
   const handleSelectSession = async (sessionId) => {
     try {
-      const response = await axios.get(`/api/chat-sessions/${sessionId}`);
-      const { session, messages: chatMessages } = response.data;
+  const response = await fetch(`/api/chat-sessions/${sessionId}`);
+      if (!response.ok) throw new Error(response.statusText);
+      const { session, messages: chatMessages } = await response.json();
 
       setCurrentSessionId(sessionId);
       setMessages(chatMessages.map(msg => ({
@@ -298,9 +355,11 @@ function App() {
       })));
 
       // Clear file and URL context when switching sessions
-      setFile(null);
       setUrlText("");
       setUploadedFiles([]);
+
+      // Update dashboard with session-specific data
+      setTimeout(updateDashboard, 100); // Small delay to ensure session is set
     } catch (error) {
       console.error("Failed to load session:", error);
     }
@@ -440,7 +499,6 @@ function App() {
           </p>
 
           <FileDrop
-            setFile={setFile}
             uploadedFiles={uploadedFiles}
             setUploadedFiles={setUploadedFiles}
           />
@@ -508,40 +566,58 @@ function App() {
           </h2>
           <div className="space-y-4 text-sm">
             <div className="glass-effect-readable p-3 rounded-lg border border-white/10">
-              <h3 className="font-semibold text-readable-dark mb-1">
-                <i className="fas fa-lightbulb mr-2 text-yellow-500"></i>Project
-                Idea
-              </h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold text-readable-dark">
+                  <i className="fas fa-lightbulb mr-2 text-yellow-500"></i>Project
+                  Idea
+                </h3>
+                <button
+                  onClick={generateProjectIdea}
+                  className="text-xs bg-yellow-500 hover:bg-yellow-600 text-white px-2 py-1 rounded transition-colors"
+                  title="Generate from chat history"
+                >
+                  <i className="fas fa-magic mr-1"></i>Generate
+                </button>
+              </div>
               <p className="text-readable-light italic">{dashboardData.idea}</p>
             </div>
             <div className="glass-effect-readable p-3 rounded-lg border border-white/10">
-              <h3 className="font-semibold text-readable-dark mb-1">
-                <i className="fas fa-cogs mr-2 text-blue-500"></i>Tech Stack
-              </h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold text-readable-dark">
+                  <i className="fas fa-cogs mr-2 text-blue-500"></i>Tech Stack
+                </h3>
+                <button
+                  onClick={generateTechStack}
+                  className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded transition-colors"
+                  title="Generate from chat history"
+                >
+                  <i className="fas fa-magic mr-1"></i>Generate
+                </button>
+              </div>
               <p className="text-readable-light italic">
                 {dashboardData.stack}
               </p>
             </div>
             <div className="glass-effect-readable p-3 rounded-lg border border-white/10">
-              <h3 className="font-semibold text-readable-dark mb-1">
+              <h3 className="font-semibold text-readable-dark mb-2">
                 <i className="fas fa-tasks mr-2 text-green-500"></i>To-Do List
               </h3>
-              <ul className="list-disc list-inside text-readable-light space-y-1">
-                {dashboardData.todos.map((todo, index) => (
-                  <li
-                    key={index}
-                    className={todo === "No tasks yet." ? "italic" : ""}
-                  >
-                    {todo}
-                  </li>
-                ))}
-              </ul>
+              <TodoManager />
             </div>
             <div className="glass-effect-readable p-3 rounded-lg border border-white/10">
-              <h3 className="font-semibold text-readable-dark mb-1">
-                <i className="fas fa-file-alt mr-2 text-purple-500"></i>
-                Submission Notes
-              </h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold text-readable-dark">
+                  <i className="fas fa-file-alt mr-2 text-purple-500"></i>
+                  Submission Notes
+                </h3>
+                <button
+                  onClick={generateSubmissionNotes}
+                  className="text-xs bg-purple-500 hover:bg-purple-600 text-white px-2 py-1 rounded transition-colors"
+                  title="Generate from chat history"
+                >
+                  <i className="fas fa-magic mr-1"></i>Generate
+                </button>
+              </div>
               <p className="text-readable-light italic">
                 {dashboardData.submission}
               </p>
