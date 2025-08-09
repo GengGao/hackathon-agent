@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any, Iterable
 import threading
 import hashlib
+import time
 from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
@@ -49,6 +50,8 @@ class RuleRAG:
         self.similarity_cutoff = similarity_cutoff
         self._last_rules_hash: Optional[str] = None
         self._lock = threading.RLock()
+        self._is_rebuilding: bool = False
+        self._last_built_at: Optional[float] = None
         if not lazy and self.index is None:
             self.rebuild(force=True)
 
@@ -87,42 +90,51 @@ class RuleRAG:
         Returns True if a rebuild occurred, False otherwise.
         """
         with self._lock:
+            if self._is_rebuilding:
+                # Another rebuild is already in progress
+                return False
+            self._is_rebuilding = True
             docs = self._gather_corpus() or []
             rules_hash = self._compute_rules_hash(docs)
             if not force and self._last_rules_hash == rules_hash and self.index is not None:
+                self._is_rebuilding = False
                 return False  # No change
 
-            # Chunking: split each doc's content by blank lines (keep metadata per chunk)
-            new_chunks: List[str] = []
-            new_metadata: List[Dict[str, Any]] = []
-            for d in docs:
-                raw = d.get("content", "")
-                parts = [c.strip() for c in raw.split('\n\n') if c.strip()]
-                if not parts:
-                    parts = [raw.strip()] if raw.strip() else []
-                for p in parts:
-                    new_chunks.append(p)
-                    new_metadata.append({
-                        "rule_id": d.get("id"),
-                        "source": d.get("source"),
-                        "filename": d.get("filename"),
-                        "length": len(p),
-                    })
-            if not new_chunks:
-                new_chunks = ["No rules/context available."]
-                new_metadata = [{"rule_id": None, "source": "none", "filename": None, "length": 0}]
+            try:
+                # Chunking: split each doc's content by blank lines (keep metadata per chunk)
+                new_chunks: List[str] = []
+                new_metadata: List[Dict[str, Any]] = []
+                for d in docs:
+                    raw = d.get("content", "")
+                    parts = [c.strip() for c in raw.split('\n\n') if c.strip()]
+                    if not parts:
+                        parts = [raw.strip()] if raw.strip() else []
+                    for p in parts:
+                        new_chunks.append(p)
+                        new_metadata.append({
+                            "rule_id": d.get("id"),
+                            "source": d.get("source"),
+                            "filename": d.get("filename"),
+                            "length": len(p),
+                        })
+                if not new_chunks:
+                    new_chunks = ["No rules/context available."]
+                    new_metadata = [{"rule_id": None, "source": "none", "filename": None, "length": 0}]
 
-            embs = EMBED_MODEL.encode(new_chunks, batch_size=32, show_progress_bar=False)
-            embs = np.array(embs).astype('float32')
-            faiss.normalize_L2(embs)
+                embs = EMBED_MODEL.encode(new_chunks, batch_size=32, show_progress_bar=False)
+                embs = np.array(embs).astype('float32')
+                faiss.normalize_L2(embs)
 
-            self.chunks = new_chunks
-            self.metadata = new_metadata
-            self.embeddings = embs
-            self.index = faiss.IndexFlatIP(DIM)
-            self.index.add(self.embeddings)
-            self._last_rules_hash = rules_hash
-            return True
+                self.chunks = new_chunks
+                self.metadata = new_metadata
+                self.embeddings = embs
+                self.index = faiss.IndexFlatIP(DIM)
+                self.index.add(self.embeddings)
+                self._last_rules_hash = rules_hash
+                self._last_built_at = time.time()
+                return True
+            finally:
+                self._is_rebuilding = False
 
     def ensure_index(self):
         """Ensure index exists (lazy build)."""
@@ -163,3 +175,15 @@ class RuleRAG:
             return results_full
         # Backward compatible: strip metadata
         return [(c, s) for (c, s, _m) in results_full]
+
+    def status(self) -> Dict[str, Any]:
+        """Return current indexing status and metadata."""
+        with self._lock:
+            ready = self.index is not None and self.embeddings is not None and len(self.chunks) > 0
+            return {
+                "ready": ready,
+                "building": self._is_rebuilding,
+                "chunks": len(self.chunks),
+                "last_built_at": self._last_built_at,
+                "rules_hash": self._last_rules_hash,
+            }

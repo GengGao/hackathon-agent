@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Ensure the app strictly fits the viewport and prevents page-level scrolling */
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
 /* Enhanced background with multiple gradient layers */
 body {
   font-family: 'Inter', sans-serif;
@@ -12,7 +18,7 @@ body {
     linear-gradient(135deg, #667eea 0%, #0da0a5 25%, #58e1b9 50%, #5785f5 75%, #4facfe 100%);
   background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%;
   background-attachment: fixed;
-  min-height: 100vh;
+  height: 100vh;
   position: relative;
 }
 

@@ -8,7 +8,7 @@ from tools import (
     update_todo, delete_todo,
     derive_project_idea, create_tech_stack, summarize_chat_history
 )
-from models import (
+from models.db import (
     create_chat_session,
     get_chat_session,
     add_chat_message,
@@ -18,12 +18,15 @@ from models import (
     delete_chat_session,
     get_project_artifact,
     get_all_project_artifacts,
+)
+from models.schemas import (
     ChatSession,
     ChatMessage,
     ProjectArtifact,
 )
 import uuid
 from pathlib import Path
+import threading
 import json, io, time
 import pdfminer.high_level
 import docx
@@ -34,7 +37,7 @@ from models.db import add_rule_context, get_rules_rows
 
 router = APIRouter()
 # Initialise RAG with default rule file (user can replace via API call later)
-rag = RuleRAG(Path(__file__).parent / "docs" / "rules.txt")
+rag = RuleRAG(Path(__file__).parent / "docs" / "rules.txt", lazy=False)
 
 MAX_FILE_BYTES = 5 * 1024 * 1024  # 5MB limit per file
 ALLOWED_FILE_EXT = {'.txt', '.md', '.pdf', '.docx', '.doc', '.png', '.jpg', '.jpeg'}
@@ -78,6 +81,13 @@ async def chat_stream(
     Streaming version of the chat endpoint that returns Server-Sent Events.
     Includes chat history as context when session_id is provided.
     """
+    # Prevent chat submission until RAG index is ready
+    st = rag.status()
+    if not st.get("ready") or st.get("building"):
+        return JSONResponse(status_code=425, content={
+            "error": "RAG index is not ready yet. Please wait until indexing completes.",
+            "status": st,
+        })
     # Generate or use provided session_id
     if not session_id:
         session_id = str(uuid.uuid4())
@@ -309,6 +319,24 @@ def add_url_text_context(url: str = Form(...), content: str = Form(...)):
     add_rule_context('url', block, filename=url)
     rag.rebuild()
     return {"ok": True, "chunks": len(rag.chunks)}
+
+
+@router.get("/context/status")
+def get_context_status():
+    """Expose current RAG indexing status for the UI."""
+    try:
+        status = rag.status()
+        # If index not ready and not currently building, trigger background build
+        if not status.get("ready") and not status.get("building"):
+            try:
+                threading.Thread(target=rag.rebuild, kwargs={"force": True}, daemon=True).start()
+                # Update local status to reflect build kickoff
+                status = rag.status()
+            except Exception:
+                pass
+        return status
+    except Exception as e:
+        return {"ready": False, "building": False, "chunks": 0, "error": str(e)}
 
 
 @router.get("/context/list")
