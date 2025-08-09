@@ -1,138 +1,169 @@
-# GAP Register (Feature & Quality Gaps)
+## GAP & Roadmap Register
 
-Living tracker of missing / incomplete capabilities vs the intended vision described in `README.md`. Use this to focus limited hackathon time. Keep entries concise; link PRs when closed.
+Living document cataloguing missing / partial features, quality gaps, and forward roadmap for HackathonHero. Each gap gets:
+ID | Priority (P0–P3) | Status | Owner? | Summary | Resolution Sketch / Acceptance Criteria.
 
----
-## Legend
-- **Priority**: P0 (must-have for demo / submission) → P3 (nice stretch)
-- **Status**: NS (Not Started), IP (In Progress), BLK (Blocked), DONE (Implemented), DROP (Descoped)
-- **Owner**: handle or `unassigned`
+Priority Scale:
+- P0 – Critical for reliability / core value in current milestone.
+- P1 – High impact or differentiator for submission quality (target next).
+- P2 – Valuable improvement; implement after P0/P1 stabilize.
+- P3 – Exploratory / nice-to-have / future vision.
 
----
-## 1. Baseline (Implemented Today)
-Backend:
-- Local LLM streaming via Ollama (`/api/chat-stream`) with thinking + tool call transparency
-- Tool calling: todos (add/list/clear/update/delete), directory listing, artifact generators (idea, tech stack, submission summary)
-- RAG: simple blank-line chunking + FAISS L2 index (MiniLM embeddings, recomputed each load)
-- SQLite schema + migrations; app settings persistence for model selection
-- Multi-file + URL (text-only) ingestion with size & type guards + basic OCR (pytesseract)
-- Model selection endpoints (`/api/ollama/status`, `/api/ollama/model`)
-- Chat sessions CRUD, artifacts persistence
-
-Frontend:
-- React + Vite UI (Chat, File drop, Todo manager, Project dashboard, Model picker, Session history)
-- SSE streaming (fetch fallback), displays thinking tokens & tool calls live
-- Manual triggers for artifact generation
-- Basic theming (glassmorphism), responsive (limited testing), priority/status UX for todos
-
-Quality / Tests:
-- Pytest coverage for DB, migrations, chat history, tools, artifacts, new feature endpoints
+Status Legend: planned | in_progress | done | deferred.
 
 ---
-## 2. Gap Matrix (High-Level)
-| ID | Title | Category | Priority | Status | Owner | Notes / Acceptance |
-|----|-------|----------|----------|--------|-------|--------------------|
-| GAP-001 | Cosine similarity retrieval | RAG Quality | P1 | DONE | geng | Switched to normalized vectors + IndexFlatIP; added test_rag_cosine.py. |
-| GAP-002 | Embedding persistence/cache | Performance | P1 | NS | unassigned | Avoid re-embedding rules on restart (serialize vectors + chunks). |
-| GAP-003 | Rule chunk highlighting in UI | UX / RAG | P2 | NS | unassigned | Surface which text matched; clickable popover. |
-| GAP-004 | Submission pack ZIP export | Export | P0 | NS | unassigned | Endpoint: zip (idea.md, tech_stack.md, summary.md, todos.json, rules_ingested.txt). |
-| GAP-005 | Single export README generator | Export | P1 | NS | unassigned | Compose artifacts into templated README snippet. |
-| GAP-006 | SSE integration test | Testing | P1 | NS | unassigned | Verify streaming frame order (thinking/tool_calls/token/end). |
-| GAP-007 | Tool auto-summarization trigger | Autonomy | P2 | NS | unassigned | Periodically summarize long chats to shrink context. |
-| GAP-008 | Rolling memory / summary messages | Memory | P2 | NS | unassigned | Replace early history with summary after threshold (e.g., >50 msgs). |
-| GAP-009 | Auth + simple rate limiting | Security | P1 | NS | unassigned | API key header + per-IP/session rate limit; protect from abuse. |
-| GAP-010 | Multi-user isolation | Security | P3 | NS | unassigned | Namespacing DB rows by user / workspace. |
-| GAP-011 | Model benchmarking script | Ops / Perf | P2 | NS | unassigned | Measure first token latency, tok/sec, RAM; outputs markdown table. |
-| GAP-012 | Structured JSON logging | Observability | P2 | NS | unassigned | Add logger w/ request id, tool events, errors. |
-| GAP-013 | Metrics endpoint (basic) | Observability | P3 | NS | unassigned | /api/metrics (Prometheus text) counts requests, tool calls, avg latency. |
-| GAP-014 | PWA offline support | Offline UX | P3 | NS | unassigned | Service worker caching core shell + last chat sessions. |
-| GAP-015 | Accessibility pass (ARIA, contrasts) | UX / A11y | P2 | NS | unassigned | Lint w/ axe; keyboard navigation for all buttons & dropdowns. |
-| GAP-016 | Mobile layout optimization | UX | P2 | NS | unassigned | Breakpoint adjustments; vertical stacking; hide heavy panels behind tabs. |
-| GAP-017 | Theme toggle (light/dark) | UX | P3 | NS | unassigned | CSS variables + persisted preference. |
-| GAP-018 | Code scaffold tool | Tooling | P3 | NS | unassigned | New function call: scaffold_code(path, template). Guard paths. |
-| GAP-019 | Export artifacts via function (tool call) | Tooling | P1 | NS | unassigned | Tool callable export_submission_pack returning manifest. |
-| GAP-020 | Enhanced ingestion (chunk-level dedupe + MD headings) | RAG Quality | P2 | NS | unassigned | Parse markdown; preserve headings; dedupe repeated paragraphs. |
-| GAP-021 | Large file streaming ingestion | Ingestion | P3 | NS | unassigned | Stream read for >1MB; incremental chunk embed. |
-| GAP-022 | URL fetch hardening | Security | P1 | NS | unassigned | Enforce domain allowlist or disable network entirely for offline mode flag. |
-| GAP-023 | Input validation / Pydantic schemas for routes | Robustness | P2 | NS | unassigned | Replace Form scatter with request models where appropriate. |
-| GAP-024 | Error boundary & toast notifications | UX | P2 | NS | unassigned | Show non-blocking errors (model switch fail, export errors). |
-| GAP-025 | Retry / exponential backoff for Ollama status | Resilience | P2 | NS | unassigned | Smooth status indicator; degrade gracefully. |
-| GAP-026 | Session title auto-generation | UX | P2 | NS | unassigned | First user message or LLM summarization sets title. |
-| GAP-027 | Artifact diff history | Artifacts | P3 | NS | unassigned | Track versions of regenerated artifacts. |
-| GAP-028 | Security: path traversal unit tests | Security | P1 | DONE | geng | Tests added (test_security_list_directory.py). |
-| GAP-029 | Rate limit tool call loops | Safety | P1 | NS | unassigned | Hard guard beyond existing max_tool_rounds → error event. |
-| GAP-030 | MIT or Apache 2.0 LICENSE file | Compliance | P0 | DONE | geng | MIT LICENSE added (2025-08-08). |
-| GAP-031 | README completion (benchmarks table) | Docs | P0 | NS | unassigned | Fill metrics + demo links. |
-| GAP-032 | Demo video script & capture checklist | Docs | P0 | NS | unassigned | Outline ensures all criteria shown. |
-| GAP-033 | CI workflow (pytest + lint) | Quality | P1 | NS | unassigned | GitHub Actions basic matrix (3.11). |
-| GAP-034 | Frontend lint & format config | Quality | P2 | NS | unassigned | ESLint rules + Prettier; run in CI. |
-| GAP-035 | Python lint/type (ruff + mypy) | Quality | P2 | NS | unassigned | Add config; fix high-signal issues. |
-| GAP-036 | SSE backpressure handling | Robustness | P3 | NS | unassigned | Ensure UI doesn't freeze w/ very long streams (chunk scheduling). |
-| GAP-037 | Cancel in-flight tool execution UI feedback | UX | P2 | NS | unassigned | Show tool call list updating statuses; allow cancel if long-running. |
-| GAP-038 | Extended todo analytics (velocity) | Productivity | P3 | NS | unassigned | Compute completion counts over time. |
-| GAP-039 | i18n readiness | Globalization | P3 | NS | unassigned | Extract strings; simple translation map. |
-| GAP-040 | Fine-tune / adapter integration placeholder | Model | P3 | NS | unassigned | Hook for loading local LoRA adapter. |
+### Snapshot (Counts)
+- Total gaps: 27
+- P0: 5 | P1: 8 | P2: 8 | P3: 6  (auth moved to deferred P3 per local-only scope)
+- Closed (done): 0 (initial register population)
 
 ---
-## 3. Detailed Notes (Selected High Impact)
-### GAP-001 Cosine Similarity Retrieval
-Current FAISS index is L2; ranking drifts with varied vector norms. Switch to IndexFlatIP with pre-normalized embeddings or compute cosine manually. Add unit test asserting order changes for known query.
-
-### GAP-002 Embedding Persistence
-Serialize: `rules.index.npy` (vectors float32), `rules.chunks.json` (array of strings), and optional metadata (model name + checksum). Rebuild only if checksum changes.
-
-### GAP-004 Submission Pack ZIP
-Endpoint: `POST /api/chat-sessions/{id}/export-pack` returns `application/zip`. Includes all artifacts (generate missing? optional flag), todos JSON (with status/priority), raw rules file copy and timestamped manifest.
-
-### GAP-009 Auth + Rate Limiting
-Lightweight: env `HACKATHON_API_TOKEN`; middleware checks header. Use simple in-memory token bucket keyed by IP+route until more robust store needed.
-
-### GAP-019 Export Tool Call
-Expose `export_submission_pack` as a tool so the agent can autonomously initiate an export on user request.
-
-### GAP-022 URL Fetch Hardening
-Currently allows arbitrary HTTP GET. Add: max redirects=1, allowed MIME types `text/*`, optional domain allowlist or disable when `OFFLINE_LOCKDOWN=1`.
-
-### GAP-029 Rate Limit Tool Call Loops
-Already have `max_tool_rounds`. Add secondary guard: count of total tool invocations per request (e.g., <=15) and fail fast with explanatory assistant message.
-
-### GAP-030 License
-Add `LICENSE` (MIT or Apache 2.0) + update README licensing section.
-
-### GAP-031 Benchmarks Table Completion
-Use benchmarking script (GAP-011) to populate latency + throughput. Mandatory before submission.
-
-### GAP-033 CI Workflow
-GitHub Actions: steps: checkout → setup Python → install deps → run `pytest -q` → run `ruff` + `mypy` (when added) → artifact coverage (optional).
-
----
-## 4. Sequencing / Dependencies
-- Do GAP-030 (License) early to avoid forgetting.
-- Export features (GAP-004, GAP-019) depend on artifact generation (already present) → implement after minor RAG improvements (GAP-001) if time allows.
-- Embedding persistence (GAP-002) assists all future RAG experimentation.
-- Auth / security (GAP-009, GAP-022, GAP-028, GAP-029) can be parallelized—minimal code surface.
-- CI (GAP-033) precedes lint/type additions (GAP-034, GAP-035) but can land with placeholders.
+### Gap Table (Condensed)
+| ID | P | Status | Area | Summary |
+|----|---|--------|------|---------|
+| G-001 | P0 | planned | Export | Submission ZIP pack (artifacts + todos + rules) |
+| G-002 | P0 | planned | Export | Individual artifact download endpoints (markdown) |
+| G-003 | P0 | planned | RAG | Embedding cache persistence (avoid recompute) |
+| G-004 | P3 | deferred | Security | Basic auth + rate limiting (local-only => deferred) |
+| G-005 | P0 | planned | Stability | SSE integration test (stream ordering & end frame) |
+| G-006 | P0 | planned | Observability | Structured JSON logging + minimal metrics |
+| G-007 | P1 | planned | RAG | Semantic / token-length aware chunking + IDs |
+| G-008 | P1 | planned | Memory | Rolling chat summarization (auto compress history) |
+| G-009 | P1 | planned | Tooling | Code scaffold + safe file write sandbox tool |
+| G-010 | P1 | planned | Performance | Model benchmarking script & persisted results |
+| G-011 | P1 | planned | UI | Rule chunk highlight & side panel display |
+| G-012 | P1 | planned | UI | Artifact management UI (list, view, export) |
+| G-013 | P1 | planned | Security | Harden URL ingestion (mime allowlist, max redirects) |
+| G-014 | P1 | planned | Offline UX | PWA caching + offline front-end shell |
+| G-015 | P2 | planned | RAG | Chunk scoring normalization & rerank experiment |
+| G-016 | P2 | planned | Tooling | Auto multi-round tool call loop (planning → execution) |
+| G-017 | P2 | planned | Testing | Synthetic RAG accuracy regression test harness |
+| G-018 | P2 | planned | Testing | Tool chain multi-call simulation test |
+| G-019 | P2 | planned | Performance | Async file/OCR ingestion pre-stream |
+| G-020 | P2 | planned | DB | WAL mode + vacuum strategy for higher concurrency |
+| G-021 | P2 | planned | UX | Accessibility (ARIA roles, keyboard nav, contrast) |
+| G-022 | P2 | planned | UX | Theming (dark/light toggle persisted) |
+| G-023 | P3 | planned | Autonomy | Prioritized roadmap auto-derivation (todo clustering) |
+| G-024 | P3 | planned | AI | Lightweight local adapter fine-tune for mentor voice |
+| G-025 | P3 | planned | Export | Devpost-ready README template generator |
+| G-026 | P3 | planned | Observability | Prometheus endpoint & Grafana sample dashboard |
+| G-027 | P3 | planned | Offline UX | Queue + retry for failed POSTs while offline |
 
 ---
-## 5. Quick Wins (≤1h Each)
-- GAP-028 Add explicit test on `list_directory` path traversal attempts
-- GAP-030 Add LICENSE file
-- GAP-031 Populate README placeholders (demo link once recorded)
-- GAP-029 Add simple tool invocation counter
-~ (Done) GAP-001 Switch to cosine (normalized + IP index)
+### Detailed Gap Descriptions
+
+#### G-001 – Submission ZIP Pack (P0)
+Add endpoint `POST /api/export/submission-pack` returning a ZIP containing: `idea.md`, `tech_stack.md`, `summary.md`, `todos.json`, `rules_ingested.txt`, `session_metadata.json`. Acceptance: deterministic file names; size <2MB typical; test asserts presence & non-empty content.
+
+#### G-002 – Artifact Download Endpoints (P0)
+`GET /api/chat-sessions/{id}/artifact/{type}.md` streaming markdown with proper `Content-Disposition`. Acceptance: 200 for existing; 404 otherwise; test coverage.
+
+#### G-003 – Embedding Cache Persistence (P0)
+Serialize embeddings + chunk metadata to `data/rules_index.{json,bin}` keyed by hash of concatenated active rules. Acceptance: cold start load <300ms for 1k chunks vs >X ms baseline; unit test ensures reuse when unchanged.
+
+#### G-004 – Basic Auth + Rate Limiting (P3, deferred)
+Current decision: local-only, trusted environment; no auth friction desired. Defer adding API key header & rate limiting until commercialization / multi-user deployment. Keep design sketch for future: optional `HERO_API_KEY` env; middleware enforcement; simple token bucket (60 chat-stream/min) toggleable. Acceptance (when activated later): exceeding limit returns 429; disabled when env unset.
+
+#### G-005 – SSE Stream Ordering Test (P0)
+Integration test asserting first events: `session_info` → `rule_chunks` → zero+ `thinking`/`tool_calls` → tokens → `end`. Acceptance: deterministic fixture using fake stream generator.
+
+#### G-006 – Structured Logging + Metrics (P0)
+Introduce logger emitting JSON lines: timestamp, event, session_id, latency_ms, token_count. Simple `/api/health` returns uptime, served_requests. Acceptance: log schema validated in test.
+
+#### G-007 – Semantic / Token-Aware Chunking (P1)
+Replace blank-line split with: sentence segmentation + max token window (e.g. 200 tokens) with overlap. Acceptance: average chunk token length variance < threshold; retrieval precision improves on synthetic eval set.
+
+#### G-008 – Rolling Chat Summarization (P1)
+Background compressor summarizing older messages after N tokens. Acceptance: prompt token count capped (<8k) while preserving summary artifact content relevance on eval queries.
+
+#### G-009 – Code Scaffold Tool (P1)
+New tool: `scaffold_code` with constrained path whitelist writing to `scaffolds/` & returning diff preview. Acceptance: attempts outside whitelist blocked; test ensures safe write.
+
+#### G-010 – Model Benchmark Script (P1)
+Script `scripts/benchmark_models.py` measuring first token latency, tokens/sec, memory (psutil). Stores JSON under `data/benchmarks/`. Acceptance: README table auto-updated via script.
+
+#### G-011 – Rule Chunk Highlight UI (P1)
+Frontend maps retrieved chunk indices to side panel with highlight in answer (e.g. [R3]). Acceptance: visual test + mapping appears in SSE event handling.
+
+#### G-012 – Artifact Management UI (P1)
+List artifacts per session with copy/download buttons; refresh on creation. Acceptance: manual test & unit test for fetch hook.
+
+#### G-013 – Harden URL Ingestion (P1)
+Add redirect limit=3, content length guard via HEAD, allowed mime list (`text/*`, `application/json`, `application/xml`). Acceptance: tests simulate blocked binary.
+
+#### G-014 – PWA Offline Shell (P1)
+Service Worker caching static assets + offline placeholder; manifest for install. Acceptance: Lighthouse PWA passes basic offline check.
+
+#### G-015 – Retrieval Score Normalization (P2)
+Experiment with length normalization or cosine + rerank (e.g. MiniLM cross-encoder optional). Acceptance: measurable MRR improvement on synthetic dataset (≥+5%).
+
+#### G-016 – Multi-Round Tool Planning Loop (P2)
+Controller decides if further tool calls required before responding (chain-of-thought hidden). Acceptance: scenarios requiring sequential todo additions executed in single user turn.
+
+#### G-017 – RAG Accuracy Regression Harness (P2)
+Dataset of (query, expected chunk id). Test ensures top-k contains expected; failing raises alert. Acceptance: CI job.
+
+#### G-018 – Tool Chain Simulation Test (P2)
+Test simulating multiple tool_calls in sequence with stub LLM to ensure proper message injection order. Acceptance: passes deterministically.
+
+#### G-019 – Async File & OCR Ingestion (P2)
+Move blocking OCR/PDF parsing off main request (pre-process then stream). Acceptance: time to first SSE token reduced ≥30% for multi-file scenario.
+
+#### G-020 – SQLite WAL & Maintenance (P2)
+Enable WAL, periodic `ANALYZE` & `VACUUM` heuristic. Acceptance: documented config; concurrency test with parallel writes shows reduced lock waits.
+
+#### G-021 – Accessibility Enhancements (P2)
+Add ARIA labels, focus outlines, skip links. Acceptance: axe audit <5 issues (critical/serious=0).
+
+#### G-022 – Theme Toggle (P2)
+Persisted light/dark via localStorage + Tailwind config. Acceptance: preference restored across reloads.
+
+#### G-023 – Auto Roadmap Derivation (P3)
+LLM summarizes brainstorm into prioritized todo groups with scoring heuristics. Acceptance: generated sections: Feasibility / Impact / Effort.
+
+#### G-024 – Local Adapter Fine-Tune (P3)
+LoRA or QLoRA small adapter to refine mentor tone; optional load flag. Acceptance: config flag & fallback when adapter absent.
+
+#### G-025 – Devpost README Template Generator (P3)
+Tool `generate_submission_readme` assembling artifacts into formatted README. Acceptance: includes sections required by Devpost checklist.
+
+#### G-026 – Prometheus Metrics (P3)
+`/metrics` endpoint (optional extra dependency) exposing counters (requests_total, tokens_streamed_total). Acceptance: scrape sample succeeds.
+
+#### G-027 – Offline Action Queue (P3)
+Frontend queues failed POSTs (todos, artifacts) and retries when back online (navigator.onLine). Acceptance: simulated offline test passes.
 
 ---
-## 6. Stretch (Likely Post-Submission)
-- GAP-014 PWA offline shell caching
-- GAP-018 Code scaffold tool (security surface area)
-- GAP-038 Velocity analytics
-- GAP-040 Adapter fine-tune hook
+### Closed Gaps (History)
+None yet.
 
 ---
-## 7. Closure Process
-1. Implement + tests/docs.
-2. Update Gap row: Status=DONE, link PR.
-3. If descoped: Status=DROP with rationale.
+### Cross-Cutting Risks & Mitigations
+- Model Drift: Pin model version in settings; record hash on artifact generation.
+- Large Rules File Performance: Mitigate via G-003 cache + stream chunk loading.
+- Security Surface: Harden (G-004, G-013) before public demo video.
+- Data Integrity: Add lightweight checksum on exported ZIP (G-001) for reproducibility.
 
 ---
-_Last updated: {{DATE}}_
+### Suggested Execution Order (Milestone Focus)
+Milestone 1 (Stabilize Core): G-005, G-006, G-003 (auth deferred)
+Milestone 2 (Submission Essentials): G-001, G-002, G-010, G-013
+Milestone 3 (Differentiators): G-009, G-008, G-011, G-012, G-014
+Milestone 4 (Performance & Depth): G-019, G-015, G-016, G-017, G-018, G-020
+Milestone 5 (Polish & Vision): Remaining P2/P3 (G-021→G-027)
+
+---
+### Update Process
+1. Add new gap with next numeric ID; keep priority rationale concise.
+2. When starting work set status to in_progress; link PR in commit message referencing ID.
+3. On merge & verification mark done and move details to Closed section (retain acceptance criteria & completion date).
+4. Re-evaluate priorities after each milestone; adjust only with rationale noted inline.
+
+---
+### References
+- Backend README Planned Enhancements section.
+- Root `README.md` sections: Roadmap Snapshot, Future Enhancements.
+- Current tests coverage (backend/tests) – identifies testing gaps (G-005, G-017, G-018).
+
+---
+Maintained for transparency & focused iteration. Keep lean, actionable.

@@ -111,6 +111,23 @@ def init_db(path: Optional[Path] = None) -> None:
             );
             """
         )
+    # Seed initial rules into rules_context table if not already present
+    try:
+        with get_connection() as conn:
+            cur = conn.execute("SELECT COUNT(*) as c FROM rules_context WHERE source='initial'")
+            row = cur.fetchone()
+            if row and row[0] == 0:
+                # Read default rules file
+                rules_path = Path(__file__).resolve().parents[1] / 'docs' / 'rules.txt'
+                if rules_path.exists():
+                    content = rules_path.read_text(encoding='utf-8')
+                    conn.execute(
+                        "INSERT INTO rules_context(source, filename, content) VALUES(?,?,?)",
+                        ("initial", "rules.txt", content)
+                    )
+    except Exception:
+        # Non-fatal; table might not exist yet in certain migration ordering contexts
+        pass
 
 
 # --- Convenience CRUD helpers used by tests and future routes ---
@@ -392,5 +409,58 @@ def get_setting(key: str) -> Optional[str]:
         cur = conn.execute("SELECT value FROM app_settings WHERE key = ?", (key,))
         row = cur.fetchone()
         return row[0] if row else None
+
+
+# --- Rules / Context storage helpers ---
+
+def add_rule_context(source: str, content: str, filename: Optional[str] = None, active: bool = True) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO rules_context(source, filename, content, active) VALUES(?,?,?,?)",
+            (source, filename, content, 1 if active else 0)
+        )
+        return int(cur.lastrowid)
+
+
+def list_active_rules() -> list[str]:
+    with get_connection() as conn:
+        cur = conn.execute("SELECT content FROM rules_context WHERE active=1 ORDER BY id ASC")
+        return [r[0] for r in cur.fetchall()]
+
+
+def list_active_rule_rows() -> list[dict]:
+    """Return active rule rows with id/source/filename/content for RAG metadata.
+
+    This avoids changing existing list_active_rules() behavior while enabling
+    richer context. Returns a list of dictionaries.
+    """
+    with get_connection() as conn:
+        cur = conn.execute(
+            "SELECT id, source, filename, content FROM rules_context WHERE active=1 ORDER BY id ASC"
+        )
+        rows: list[dict] = []
+        for r in cur.fetchall():
+            rows.append({
+                "id": r[0],
+                "source": r[1],
+                "filename": r[2],
+                "content": r[3],
+            })
+        return rows
+
+
+def deactivate_rule(rule_id: int) -> bool:
+    with get_connection() as conn:
+        cur = conn.execute("UPDATE rules_context SET active=0 WHERE id=?", (rule_id,))
+        return cur.rowcount > 0
+
+
+def get_rules_rows() -> list[dict]:
+    with get_connection() as conn:
+        cur = conn.execute("SELECT id, source, filename, active, created_at, length(content) as size FROM rules_context ORDER BY id ASC")
+        rows = []
+        for r in cur.fetchall():
+            rows.append({"id": r[0], "source": r[1], "filename": r[2], "active": bool(r[3]), "created_at": r[4], "size": r[5]})
+        return rows
 
 

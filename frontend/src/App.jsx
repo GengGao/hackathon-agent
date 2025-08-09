@@ -230,14 +230,38 @@ function App() {
       return;
     }
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "assistant",
-        content:
-          "Context updated! I'm ready to help with your hackathon project.",
-      },
-    ]);
+    try {
+      // Upload files (if any)
+      for (const f of uploadedFiles) {
+        if (f.raw) {
+          const formData = new FormData();
+          formData.append('file', f.raw, f.name);
+          await fetch('/api/rules', { method: 'POST', body: formData });
+        }
+      }
+      // Add pasted text (if any)
+      if (urlText.trim()) {
+        const formData = new FormData();
+        formData.append('text', urlText);
+        await fetch('/api/context/add-text', { method: 'POST', body: formData });
+      }
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: "Context stored and RAG index rebuilt! Future answers will use it.",
+        },
+      ]);
+      // Clear local selections after upload
+      setUploadedFiles([])
+      setUrlText("")
+    } catch (e) {
+      console.error('Failed to set context', e)
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: 'Failed to store context: ' + e.message }
+      ])
+    }
   };
 
   const updateDashboard = async () => {

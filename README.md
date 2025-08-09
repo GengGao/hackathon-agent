@@ -1,6 +1,6 @@
 # HackathonHero
 
-> Offline, local-first AI agent that turns raw brainstorming + files into a polished hackathon submission pack.
+> Offline, local-first AI agent that turns raw brainstorming + files into a polished hackathon submission pack. NO accounts required.
 
 ---
 ## Quick Links

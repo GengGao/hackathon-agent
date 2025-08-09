@@ -30,6 +30,7 @@ import docx
 import pytesseract
 from PIL import Image
 import requests
+from models.db import add_rule_context, get_rules_rows
 
 router = APIRouter()
 # Initialise RAG with default rule file (user can replace via API call later)
@@ -262,16 +263,57 @@ def delete_todo_route(todo_id: int):
 
 @router.post("/rules")
 def upload_rules(file: UploadFile = File(...)):
-    """
-    Replace the current rules file used by RAG.
-    """
-    target = Path(__file__).parent / "docs" / "rules.txt"
-    content = file.file.read()
-    target.write_bytes(content)
-    # Reload RAG index
-    global rag
-    rag = RuleRAG(target)
-    return {"ok": True}
+    """Replace the current rules file & store in DB as a new active context row."""
+    content_bytes = file.file.read()
+    content = content_bytes.decode('utf-8', errors='ignore')
+    add_rule_context('file', content, filename=file.filename, active=True)
+    rag.rebuild()
+    return {"ok": True, "chunks": len(rag.chunks)}
+
+
+@router.post("/context/add-text")
+def add_text_context(text: str = Form(...)):
+    """Add a block of pasted text as context for RAG."""
+    cleaned = text.strip()
+    if not cleaned:
+        return JSONResponse(status_code=400, content={"error": "Empty text"})
+    # If it's a URL, fetch and store fetched snippet instead of raw URL only
+    if cleaned.startswith(('http://', 'https://')):
+        try:
+            resp = requests.get(cleaned, timeout=8, stream=True)
+            ctype = resp.headers.get('Content-Type', '')
+            if 'text' not in ctype.lower():
+                snippet = f"[Blocked non-text content-type {ctype}]"
+            else:
+                content_bytes = resp.content[:100_000]
+                if len(resp.content) > 100_000:
+                    snippet = content_bytes.decode('utf-8', errors='ignore') + "\n[Truncated]"
+                else:
+                    snippet = content_bytes.decode('utf-8', errors='ignore')
+            block = f"[URL:{cleaned}]\n{snippet}"
+            add_rule_context('url', block, filename=cleaned)
+        except Exception as e:
+            # Store URL with failure note to keep traceability
+            block = f"[URL_FETCH_FAILED:{cleaned}]\nError: {e}"
+            add_rule_context('url', block, filename=cleaned)
+    else:
+        add_rule_context('text', cleaned)
+    rag.rebuild()
+    return {"ok": True, "chunks": len(rag.chunks)}
+
+
+@router.post("/context/add-url-text")
+def add_url_text_context(url: str = Form(...), content: str = Form(...)):
+    """Add content fetched from a URL (frontend is responsible for fetching)."""
+    block = f"[URL:{url}]\n{content.strip()}"
+    add_rule_context('url', block, filename=url)
+    rag.rebuild()
+    return {"ok": True, "chunks": len(rag.chunks)}
+
+
+@router.get("/context/list")
+def list_context():
+    return {"items": get_rules_rows(), "chunks": len(rag.chunks)}
 
 
 @router.get("/chat-sessions")
