@@ -27,6 +27,7 @@ Hackathon teams lose disproportionate time structuring ideas, tracking progress,
 - 📴 **Offline-First**: after local model + embedding download, zero outward network dependency
 - 🗂 **SQLite + Migrations**: reproducible state, artifacts persisted per chat session
 - 🗺 **Gap Register (GAP.md)**: transparent roadmap & prioritization
+- 🧩 **PWA App Shell**: service worker with runtime caching via vite-plugin-pwa
 
 Planned (near term): export submission pack ZIP; code scaffold tool; auto summarization triggers; light auth/rate limiting.
 
@@ -52,7 +53,7 @@ Planned (near term): export submission pack ZIP; code scaffold tool; auto summar
   Browser uploads (rules/files)  Project Artifacts & Chat Logs
 ```
 **Key Components**
-- `backend/llm.py`: streaming + tool call processing (OpenAI-compatible client pointed at Ollama)
+- `backend/llm.py`: streaming + tool call processing (OpenAI-compatible client to Ollama)
 - `backend/rag.py`: rule chunking + FAISS index (SentenceTransformer MiniLM embeddings)
 - `backend/tools.py`: todo CRUD, directory listing, artifact generators
 - `backend/models/db.py`: migrations + persistence helpers
@@ -86,7 +87,7 @@ pip install -r requirements.txt
 python -c "from models.db import init_db; init_db()"  # run migrations
 uvicorn main:app --reload
 ```
-Backend default: http://localhost:8000
+Backend default: http://localhost:8000 (API under `/api`)
 
 ### Frontend
 ```bash
@@ -105,13 +106,13 @@ Frontend default: http://localhost:5173
 ---
 ## 7. Usage Flow
 1. Start Ollama + backend + frontend.
-2. (Optional) Upload / replace rules at `/api/rules` or via UI planned form.
+2. Add context: upload files or paste text/URLs in the left panel (calls `/api/context/*`).
 3. Chat: brainstorm; agent may propose/add todos via tool calls.
 4. Generate artifacts:
    - `POST /api/chat-sessions/{id}/derive-project-idea`
    - `POST /api/chat-sessions/{id}/create-tech-stack`
    - `POST /api/chat-sessions/{id}/summarize-chat-history`
-5. Review artifacts (future: export ZIP).
+5. Review artifacts (export ZIP coming soon).
 
 ---
 ## 8. Tooling (Function Calls)
@@ -172,11 +173,10 @@ Script (planned) will capture and record these locally for transparency.
 ---
 ## 13. Roadmap Snapshot
 See [GAP.md](./GAP.md) for full prioritized list (P0→P3). Immediate targets:
-- [x] Cosine similarity retrieval (implemented)
+- [x] PWA offline app shell (done)
 - [ ] Submission pack export
-- [ ] Export README & artifact ZIP endpoint
+- [ ] Artifact download endpoints
 - [ ] Model benchmarking script
-- [ ] Auth + rate limiting (basic)
 - [ ] Embedding cache
 
 ---
@@ -249,13 +249,13 @@ Add handle(s) here.
 ## 22. Appendix (API Snapshot)
 | Method & Path | Purpose |
 |--------------|---------|
-| POST `/api/chat-stream` | Stream chat (SSE) with tool calls & thinking tokens |
+| POST `/api/chat-stream` | Stream chat (SSE) with `thinking`, `tool_calls`, `token`, `end` |
 | GET `/api/todos` | List todos (`?detailed=true`) |
 | POST `/api/todos` | Add todo (form `item`) |
 | PUT `/api/todos/{id}` | Update fields (item/status/sort_order) |
 | DELETE `/api/todos/{id}` | Delete one |
 | DELETE `/api/todos` | Clear all |
-| POST `/api/rules` | Upload new rules file (optional `session_id` to scope to a chat) |
+| POST `/api/context/rules` | Upload rules/content file (optional `session_id`) |
 | GET `/api/chat-sessions` | List sessions (limit/offset) |
 | GET `/api/chat-sessions/{id}` | Session detail & messages |
 | PUT `/api/chat-sessions/{id}/title` | Rename session |
@@ -264,7 +264,7 @@ Add handle(s) here.
 | POST `/api/chat-sessions/{id}/create-tech-stack` | Generate & store tech stack |
 | POST `/api/chat-sessions/{id}/summarize-chat-history` | Generate & store submission summary |
 | POST `/api/context/add-text` | Add pasted text context (optional `session_id`) |
-| POST `/api/context/add-url-text` | Add fetched URL content (optional `session_id`) |
+| POST `/api/context/add-text` | Add pasted text or fetched URL snippet (optional `session_id`) |
 | GET `/api/context/status` | RAG status (accepts `session_id` query) |
 | GET `/api/context/list` | List context rows (accepts `session_id` query) |
 | GET `/api/ollama/status` | Model & availability |

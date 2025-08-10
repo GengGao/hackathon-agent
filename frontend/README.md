@@ -12,7 +12,7 @@ React + Vite UI powering the local hackathon assistant.
 | Styling | Tailwind CSS | Utility-first styling |
 | Markdown Render | `react-markdown` + `remark-gfm` | Tables, lists, code formatting |
 | Syntax Highlight | `react-syntax-highlighter` (Prism) | Highlights model code outputs |
-| HTTP | Fetch / Axios | SSE & REST calls |
+| HTTP | Fetch | SSE & REST calls |
 | State | Local component state | Simple, no global store yet |
 
 ---
@@ -25,7 +25,7 @@ React + Vite UI powering the local hackathon assistant.
 | `components/TodoManager.jsx` | Todos (status cycle, priority) |
 | `components/FileDrop.jsx` | Drag/drop multi-file upload |
 
-Planned: `ArtifactPanel.jsx`, `ExportButton.jsx`, `ModelSelector.jsx`.
+Planned: `ArtifactPanel.jsx`, `ExportButton.jsx`.
 
 ---
 ## Chat Streaming Protocol
@@ -74,7 +74,7 @@ npm install
 npm run dev
 # Open http://localhost:5173
 ```
-The backend should run at `http://localhost:8000`. Adjust CORS in `backend/main.py` if hosting differently.
+The backend should run at `http://localhost:8000` (proxied during dev). Adjust CORS in `backend/main.py` if hosting differently.
 
 ### Optional Vite Proxy Example
 Add to `vite.config.js` if you want same-origin API during dev:

@@ -120,6 +120,7 @@ python -c "from models.db import init_db; init_db()"
 uvicorn main:app --reload
 ```
 API root: http://localhost:8000/api
+SSE events emitted by `/api/chat-stream`: `session_info`, `rule_chunks`, `thinking`, `tool_calls`, `token`, `end`.
 
 Ollama must be running locally with at least `gpt-oss:20b` pulled.
 
