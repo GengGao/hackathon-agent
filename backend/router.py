@@ -34,6 +34,7 @@ import pytesseract
 from PIL import Image
 import requests
 from models.db import add_rule_context, get_rules_rows
+import re
 
 router = APIRouter()
 # Initialise RAG with default rule file (user can replace via API call later)
@@ -41,6 +42,18 @@ rag = RuleRAG(Path(__file__).parent / "docs" / "rules.txt", lazy=False)
 
 MAX_FILE_BYTES = 5 * 1024 * 1024  # 5MB limit per file
 ALLOWED_FILE_EXT = {'.txt', '.md', '.pdf', '.docx', '.doc', '.png', '.jpg', '.jpeg'}
+
+
+def strip_context_blocks(text: str) -> str:
+    if not text:
+        return text
+    # Remove [FILE:...]...[/FILE] blocks
+    cleaned = re.sub(r"\[FILE:[^\]]+\][\s\S]*?\[/FILE\]", "", text, flags=re.IGNORECASE)
+    # Remove [URL_TEXT]...[/URL_TEXT] blocks
+    cleaned = re.sub(r"\[URL_TEXT\][\s\S]*?\[/URL_TEXT\]", "", cleaned, flags=re.IGNORECASE)
+    # Collapse excessive blank lines and trim
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned
 
 def extract_text_from_file(file: UploadFile) -> str:
     filename = file.filename
@@ -142,9 +155,10 @@ async def chat_stream(
             metadata["url_text"] = url_text[:100] + "..." if len(url_text) > 100 else url_text
             context_parts.append(f"[URL_TEXT]\n{url_text}\n[/URL_TEXT]")
 
-    # Save user message to database
+    # Save user message to database (strip context tags for stored/displayed content)
     user_content = "\n".join(context_parts + [user_input])
-    add_chat_message(session_id, "user", user_content, metadata)
+    saved_user_content = strip_context_blocks(user_content)
+    add_chat_message(session_id, "user", saved_user_content, metadata)
 
     # Retrieve relevant rule chunks (scoped to session)
     rule_hits = rag.retrieve(user_input, k=5)
@@ -198,6 +212,8 @@ async def chat_stream(
 
         # Collect assistant response for saving to database
         assistant_response_parts = []
+        assistant_thinking_parts: List[str] = []
+        tool_calls_logged: List[Dict[str, Any]] = []
 
         # Stream the assistant response, surface tool_calls events to UI as info
         last_heartbeat = time.time()
@@ -211,8 +227,28 @@ async def chat_stream(
                     if data.get("type") == "thinking":
                         # Throttle thinking tokens minimally to avoid flooding
                         yield f"data: {json.dumps({'type': 'thinking', 'content': data.get('content')})}\n\n"
+                        # Collect full thinking text for metadata persistence
+                        content_piece = data.get("content")
+                        if content_piece:
+                            assistant_thinking_parts.append(content_piece)
                     elif data.get("type") == "tool_calls":
-                        yield f"data: {json.dumps({'type': 'tool_calls', 'tool_calls': data.get('tool_calls', [])})}\n\n"
+                        calls = data.get("tool_calls", []) or []
+                        yield f"data: {json.dumps({'type': 'tool_calls', 'tool_calls': calls})}\n\n"
+                        # Accumulate unique tool calls for metadata persistence
+                        for tc in calls:
+                            try:
+                                # Deduplicate by id if present; otherwise by (name, arguments)
+                                has_id = isinstance(tc, dict) and tc.get("id") is not None
+                                if has_id:
+                                    if any(existing.get("id") == tc.get("id") for existing in tool_calls_logged):
+                                        continue
+                                else:
+                                    if any((existing.get("name") == tc.get("name") and existing.get("arguments") == tc.get("arguments")) for existing in tool_calls_logged):
+                                        continue
+                                tool_calls_logged.append(tc)
+                            except Exception:
+                                # Best-effort logging; ignore malformed entries
+                                pass
                     elif data.get("type") == "content" and data.get("content"):
                         content = data['content']
                         assistant_response_parts.append(content)
@@ -226,10 +262,17 @@ async def chat_stream(
                     yield f": ping\n\n"
                     last_heartbeat = time.time()
 
-        # Save assistant response to database
+        # Save assistant response to database (ensure no context tags leak)
         if assistant_response_parts:
-            assistant_content = "".join(assistant_response_parts)
-            add_chat_message(session_id, "assistant", assistant_content)
+            assistant_content = strip_context_blocks("".join(assistant_response_parts))
+            # Persist thinking and tool_calls inside metadata for later rendering
+            metadata: Dict[str, Any] = {}
+            full_thinking = "".join(assistant_thinking_parts).strip()
+            if full_thinking:
+                metadata["thinking"] = full_thinking
+            if tool_calls_logged:
+                metadata["tool_calls"] = tool_calls_logged
+            add_chat_message(session_id, "assistant", assistant_content, metadata if metadata else None)
 
         yield f"data: {json.dumps({'type': 'end'})}\n\n"
 
@@ -427,9 +470,16 @@ def get_chat_session_detail(session_id: str, limit: Optional[int] = Query(None, 
         paged = all_messages
     else:
         paged = all_messages[offset: offset + limit]
+    # Sanitize content on return to avoid leaking any context tags from legacy rows
+    out_messages: List[Dict[str, Any]] = []
+    for row in paged:
+        msg = ChatMessage.from_row(row)
+        msg.content = strip_context_blocks(msg.content)
+        out_messages.append(msg.model_dump())
+
     return {
         "session": ChatSession.from_row(session).model_dump(),
-        "messages": [ChatMessage.from_row(row).model_dump() for row in paged],
+        "messages": out_messages,
         "total_messages": len(all_messages),
         "offset": offset,
         "limit": limit if limit is not None else len(all_messages)

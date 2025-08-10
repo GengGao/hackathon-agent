@@ -118,11 +118,11 @@ def test_multi_file_ingestion_and_tool_calls(client: TestClient, monkeypatch):
     assert content_seen, "Expected content token"
     assert session_id, "Session id not received"
 
-    # Verify stored user message contains markers for both files
+    # Verify stored user message has tags stripped but metadata captured
     messages = get_chat_messages(session_id)
     user_msgs = [m for m in messages if m["role"] == "user"]
-    assert any("[FILE:a.txt]" in m["content"] for m in user_msgs)
-    assert any("[FILE:b.txt]" in m["content"] for m in user_msgs)
+    assert any("[FILE:a.txt]" not in m["content"] for m in user_msgs)
+    assert any("[FILE:b.txt]" not in m["content"] for m in user_msgs)
 
 
 def test_url_text_plain_passthrough(client: TestClient, monkeypatch):

@@ -529,7 +529,8 @@ function App() {
 					role: msg.role,
 					content: msg.content,
 					rule_chunks: [],
-					thinking: "",
+					thinking: msg.metadata?.thinking || "",
+					tool_calls: msg.metadata?.tool_calls || [],
 				})),
 			);
 

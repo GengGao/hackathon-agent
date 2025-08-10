@@ -7,7 +7,7 @@ from llm import initialize_models
 
 app = FastAPI(
     title="HackathonHero",
-    description="Zero‑to‑hero offline assistant for hackathon idea → submission.",
+    description="Zero‑to‑hero offline agent for hackathon idea → submission.",
     version="0.1.0"
 )
 
