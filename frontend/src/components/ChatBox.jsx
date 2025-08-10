@@ -35,7 +35,7 @@ export default function ChatBox({
 	return (
 		<>
 			{/* Chat Header */}
-			<div className="p-4 border-b border-white/20 flex items-center justify-between">
+			<div className="section-header">
 				<h3 className="text-lg font-semibold gradient-text">
 					<i className="fas fa-comments mr-2" />
 					Chat Assistant
@@ -125,13 +125,7 @@ export default function ChatBox({
 											<ReactMarkdown
 												remarkPlugins={[remarkGfm]}
 												components={{
-													code({
-														node,
-														inline,
-														className,
-														children,
-														...props
-													}) {
+													code({ inline, className, children, ...props }) {
 														const match = /language-(\w+)/.exec(
 															className || "",
 														);

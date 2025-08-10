@@ -176,12 +176,12 @@ def list_project_files(project_id: int) -> list[sqlite3.Row]:
 
 def list_todos_db() -> list[sqlite3.Row]:
     with get_connection() as conn:
-        # Prefer ordering by status (pending first), priority, sort_order then id if columns exist
+        # Prefer ordering by status (pending first), sort_order then id if columns exist
         try:
             cur = conn.execute(
-                "SELECT * FROM todos ORDER BY "+
+                "SELECT * FROM todos ORDER BY "
                 "CASE WHEN status='pending' THEN 0 WHEN status='in_progress' THEN 1 ELSE 2 END, "
-                "priority ASC, sort_order ASC, id ASC"
+                "sort_order ASC, id ASC"
             )
         except Exception:
             # Legacy schema fallback
@@ -194,7 +194,7 @@ def add_todo_db(item: str) -> int:
         # Attempt extended insert if columns exist
         try:
             cur = conn.execute(
-                "INSERT INTO todos(item, status, priority, sort_order) VALUES(?, 'pending', 3, 0)",
+                "INSERT INTO todos(item, status, sort_order) VALUES(?, 'pending', 0)",
                 (item,)
             )
         except Exception:
@@ -208,7 +208,7 @@ def clear_todos_db() -> None:
 
 
 def update_todo_db(todo_id: int, item: Optional[str] = None, status: Optional[str] = None,
-                   priority: Optional[int] = None, sort_order: Optional[int] = None) -> bool:
+                   sort_order: Optional[int] = None) -> bool:
     """Update fields on a todo. Returns True if a row was modified."""
     fields = []
     params: list[Any] = []  # type: ignore
@@ -222,9 +222,6 @@ def update_todo_db(todo_id: int, item: Optional[str] = None, status: Optional[st
             fields.append("completed_at = datetime('now')")
         else:
             fields.append("completed_at = NULL")
-    if priority is not None:
-        fields.append("priority = ?")
-        params.append(priority)
     if sort_order is not None:
         fields.append("sort_order = ?")
         params.append(sort_order)
@@ -235,12 +232,26 @@ def update_todo_db(todo_id: int, item: Optional[str] = None, status: Optional[st
     with get_connection() as conn:
         try:
             cur = conn.execute(sql, params)
-            return cur.rowcount > 0
+            if cur.rowcount > 0:
+                return True
+            # If no rows were reported as changed, it might be a no-op (values identical).
+            # Consider this a success if the todo exists.
+            try:
+                chk = conn.execute("SELECT 1 FROM todos WHERE id = ?", (todo_id,)).fetchone()
+                return chk is not None
+            except Exception:
+                return False
         except Exception:
             # Legacy schema fallback (only item available)
             if item is not None:
                 cur = conn.execute("UPDATE todos SET item=? WHERE id=?", (item, todo_id))
-                return cur.rowcount > 0
+                if cur.rowcount > 0:
+                    return True
+                try:
+                    chk = conn.execute("SELECT 1 FROM todos WHERE id = ?", (todo_id,)).fetchone()
+                    return chk is not None
+                except Exception:
+                    return False
             return False
 
 
@@ -413,39 +424,93 @@ def get_setting(key: str) -> Optional[str]:
 
 # --- Rules / Context storage helpers ---
 
-def add_rule_context(source: str, content: str, filename: Optional[str] = None, active: bool = True) -> int:
+def add_rule_context(
+    source: str,
+    content: str,
+    filename: Optional[str] = None,
+    active: bool = True,
+    session_id: Optional[str] = None,
+) -> int:
+    """Insert a context row. If session_id is provided, associate it with that chat session.
+
+    When session_id is None, the row is considered global and may be included for all sessions.
+    """
     with get_connection() as conn:
-        cur = conn.execute(
-            "INSERT INTO rules_context(source, filename, content, active) VALUES(?,?,?,?)",
-            (source, filename, content, 1 if active else 0)
-        )
+        # Backward compatible insert for older DBs without session_id
+        try:
+            cur = conn.execute(
+                "INSERT INTO rules_context(source, filename, content, active, session_id) VALUES(?,?,?,?,?)",
+                (source, filename, content, 1 if active else 0, session_id)
+            )
+        except Exception:
+            cur = conn.execute(
+                "INSERT INTO rules_context(source, filename, content, active) VALUES(?,?,?,?)",
+                (source, filename, content, 1 if active else 0)
+            )
         return int(cur.lastrowid)
 
 
-def list_active_rules() -> list[str]:
+def list_active_rules(session_id: Optional[str] = None) -> list[str]:
+    """Return active rule contents.
+
+    If session_id is provided, include rows that are either global (NULL session_id)
+    or explicitly for that session. Otherwise, include all active rows (legacy behavior).
+    """
     with get_connection() as conn:
-        cur = conn.execute("SELECT content FROM rules_context WHERE active=1 ORDER BY id ASC")
-        return [r[0] for r in cur.fetchall()]
+        if session_id is None:
+            cur = conn.execute("SELECT content FROM rules_context WHERE active=1 ORDER BY id ASC")
+            return [r[0] for r in cur.fetchall()]
+        try:
+            cur = conn.execute(
+                "SELECT content FROM rules_context WHERE active=1 AND (session_id IS NULL OR session_id = ?) ORDER BY id ASC",
+                (session_id,)
+            )
+            return [r[0] for r in cur.fetchall()]
+        except Exception:
+            # Fallback for legacy schema without session_id column
+            cur = conn.execute("SELECT content FROM rules_context WHERE active=1 ORDER BY id ASC")
+            return [r[0] for r in cur.fetchall()]
 
 
-def list_active_rule_rows() -> list[dict]:
+def list_active_rule_rows(session_id: Optional[str] = None) -> list[dict]:
     """Return active rule rows with id/source/filename/content for RAG metadata.
 
     This avoids changing existing list_active_rules() behavior while enabling
     richer context. Returns a list of dictionaries.
     """
     with get_connection() as conn:
-        cur = conn.execute(
-            "SELECT id, source, filename, content FROM rules_context WHERE active=1 ORDER BY id ASC"
-        )
+        try:
+            if session_id is None:
+                cur = conn.execute(
+                    "SELECT id, source, filename, content, session_id FROM rules_context WHERE active=1 ORDER BY id ASC"
+                )
+            else:
+                cur = conn.execute(
+                    "SELECT id, source, filename, content, session_id FROM rules_context WHERE active=1 AND (session_id IS NULL OR session_id = ?) ORDER BY id ASC",
+                    (session_id,)
+                )
+        except Exception:
+            # Legacy schema without session_id
+            cur = conn.execute(
+                "SELECT id, source, filename, content FROM rules_context WHERE active=1 ORDER BY id ASC"
+            )
         rows: list[dict] = []
         for r in cur.fetchall():
-            rows.append({
-                "id": r[0],
-                "source": r[1],
-                "filename": r[2],
-                "content": r[3],
-            })
+            try:
+                rows.append({
+                    "id": r[0],
+                    "source": r[1],
+                    "filename": r[2],
+                    "content": r[3],
+                    "session_id": r[4],
+                })
+            except Exception:
+                rows.append({
+                    "id": r[0],
+                    "source": r[1],
+                    "filename": r[2],
+                    "content": r[3],
+                })
         return rows
 
 
@@ -455,12 +520,33 @@ def deactivate_rule(rule_id: int) -> bool:
         return cur.rowcount > 0
 
 
-def get_rules_rows() -> list[dict]:
+def get_rules_rows(session_id: Optional[str] = None) -> list[dict]:
     with get_connection() as conn:
-        cur = conn.execute("SELECT id, source, filename, active, created_at, length(content) as size FROM rules_context ORDER BY id ASC")
-        rows = []
-        for r in cur.fetchall():
-            rows.append({"id": r[0], "source": r[1], "filename": r[2], "active": bool(r[3]), "created_at": r[4], "size": r[5]})
-        return rows
+        try:
+            if session_id is None:
+                cur = conn.execute("SELECT id, source, filename, active, created_at, length(content) as size, session_id FROM rules_context ORDER BY id ASC")
+            else:
+                cur = conn.execute(
+                    "SELECT id, source, filename, active, created_at, length(content) as size, session_id FROM rules_context WHERE session_id IS NULL OR session_id = ? ORDER BY id ASC",
+                    (session_id,)
+                )
+            rows = []
+            for r in cur.fetchall():
+                rows.append({
+                    "id": r[0],
+                    "source": r[1],
+                    "filename": r[2],
+                    "active": bool(r[3]),
+                    "created_at": r[4],
+                    "size": r[5],
+                    "session_id": r[6],
+                })
+            return rows
+        except Exception:
+            cur = conn.execute("SELECT id, source, filename, active, created_at, length(content) as size FROM rules_context ORDER BY id ASC")
+            rows = []
+            for r in cur.fetchall():
+                rows.append({"id": r[0], "source": r[1], "filename": r[2], "active": bool(r[3]), "created_at": r[4], "size": r[5]})
+            return rows
 
 

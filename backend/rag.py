@@ -52,8 +52,21 @@ class RuleRAG:
         self._lock = threading.RLock()
         self._is_rebuilding: bool = False
         self._last_built_at: Optional[float] = None
+        self._session_id: Optional[str] = None
         if not lazy and self.index is None:
             self.rebuild(force=True)
+
+    def set_session(self, session_id: Optional[str]) -> None:
+        """Scope this RAG instance to a specific chat session.
+
+        Passing None resets to global context only.
+        """
+        with self._lock:
+            if self._session_id == session_id:
+                return
+            self._session_id = session_id
+            # Force rebuild on next ensure/retrieval by clearing hash
+            self._last_rules_hash = None
 
     def _gather_corpus(self) -> List[Dict[str, Any]]:
         """Return list of rule documents with metadata keys: id, source, filename, content.
@@ -62,10 +75,18 @@ class RuleRAG:
         """
         rows: List[Dict[str, Any]] = []
         try:
-            rows = list_active_rule_rows()
+            rows = list_active_rule_rows(self._session_id)
         except (sqlite3.OperationalError, Exception):
             rows = []
         if rows:
+            # If any user-provided context exists in the current scope, exclude seeded initial rules.
+            try:
+                has_any_non_initial = any(r.get("source") != "initial" for r in rows)
+                if has_any_non_initial:
+                    rows = [r for r in rows if r.get("source") != "initial"]
+            except Exception:
+                # Be permissive: if anything goes wrong, return as-is
+                pass
             return rows
         if self.rules_path and self.rules_path.exists():
             return [{
@@ -138,7 +159,7 @@ class RuleRAG:
 
     def ensure_index(self):
         """Ensure index exists (lazy build)."""
-        if self.index is None:
+        if self.index is None or self._last_rules_hash is None:
             self.rebuild(force=True)
 
     def retrieve(self, query: str, k: int = 5, include_metadata: bool = False) -> List[Any]:
@@ -179,11 +200,17 @@ class RuleRAG:
     def status(self) -> Dict[str, Any]:
         """Return current indexing status and metadata."""
         with self._lock:
-            ready = self.index is not None and self.embeddings is not None and len(self.chunks) > 0
+            ready = (
+                self.index is not None
+                and self.embeddings is not None
+                and len(self.chunks) > 0
+                and self._last_rules_hash is not None
+            )
             return {
                 "ready": ready,
                 "building": self._is_rebuilding,
                 "chunks": len(self.chunks),
                 "last_built_at": self._last_built_at,
                 "rules_hash": self._last_rules_hash,
+                "session_id": self._session_id,
             }

@@ -289,6 +289,33 @@ body::before {
   box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
 }
 
+/* Unified header styling for all sections */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem; /* ~ py-2 px-3 */
+  border-bottom: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow:
+    0 20px 24px -4px rgba(17, 24, 39, 0.14),
+    0 8px 10px -6px rgba(17, 24, 39, 0.08);
+  filter: drop-shadow(0 6px 12px rgba(17, 24, 39, 0.14));
+  z-index: 1000;
+}
+
+.section-header h2,
+.section-header h3 {
+  margin: 4px 0;
+}
+
+/* Enhanced shadow for dropdown menus */
+.dropdown-shadow {
+  box-shadow:
+    0 20px 24px -4px rgba(17, 24, 39, 0.18),
+    0 8px 10px -6px rgba(17, 24, 39, 0.16);
+  filter: drop-shadow(0 6px 12px rgba(17, 24, 39, 0.18));
+}
+
 .scrollbar,
 .custom-scrollbar {
   scrollbar-width: thin;
@@ -377,7 +404,7 @@ h1 {
 }
 h2 {
     display: block;
-    font-size: 1.5em;
+    /* font-size: 1.5em; */
     margin-top: 0.83em;
     margin-bottom: 0.83em;
     margin-left: 0;

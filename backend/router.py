@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Form, Query
+from fastapi import APIRouter, UploadFile, File, Form, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import List, Dict, Any, Optional
 from llm import generate_stream, check_ollama_status, get_current_model, set_model
@@ -81,19 +81,24 @@ async def chat_stream(
     Streaming version of the chat endpoint that returns Server-Sent Events.
     Includes chat history as context when session_id is provided.
     """
-    # Prevent chat submission until RAG index is ready
-    st = rag.status()
-    if not st.get("ready") or st.get("building"):
-        return JSONResponse(status_code=425, content={
-            "error": "RAG index is not ready yet. Please wait until indexing completes.",
-            "status": st,
-        })
     # Generate or use provided session_id
     if not session_id:
         session_id = str(uuid.uuid4())
 
     # Create/ensure chat session exists
     create_chat_session(session_id)
+
+    # Scope RAG to this session
+    try:
+        rag.set_session(session_id)
+    except Exception:
+        pass
+
+    # Ensure session-scoped index exists (synchronous build if needed)
+    try:
+        rag.ensure_index()
+    except Exception:
+        pass
 
     # Gather context
     context_parts = []
@@ -141,7 +146,7 @@ async def chat_stream(
     user_content = "\n".join(context_parts + [user_input])
     add_chat_message(session_id, "user", user_content, metadata)
 
-    # Retrieve relevant rule chunks
+    # Retrieve relevant rule chunks (scoped to session)
     rule_hits = rag.retrieve(user_input, k=5)
     rule_text = "\n".join([f"Rule Chunk {i+1}:\n{chunk}" for i, (chunk, _) in enumerate(rule_hits)])
 
@@ -252,13 +257,37 @@ def delete_todos():
 
 
 @router.put("/todos/{todo_id}")
-def update_todo_route(todo_id: int,
-                      item: Optional[str] = Form(None),
-                      status: Optional[str] = Form(None),
-                      priority: Optional[int] = Form(None),
-                      sort_order: Optional[int] = Form(None)):
-    res = update_todo(todo_id, item=item, status=status, priority=priority, sort_order=sort_order)
+async def update_todo_route(todo_id: int,
+                            request: Request,
+                            item: Optional[str] = Form(None),
+                            status: Optional[str] = Form(None),
+                            sort_order: Optional[int] = Form(None)):
+    # Accept either form-encoded fields or JSON body
+    fields: Dict[str, Any] = {}
+    if item is not None:
+        fields["item"] = item
+    if status is not None:
+        fields["status"] = status
+    if sort_order is not None:
+        fields["sort_order"] = sort_order
+
+    if not fields:
+        try:
+            if request.headers.get("content-type", "").startswith("application/json"):
+                payload = await request.json()
+                if isinstance(payload, dict):
+                    for k in ("item", "status", "sort_order"):
+                        if k in payload and payload[k] is not None:
+                            fields[k] = payload[k]
+        except Exception:
+            pass
+
+    if not fields:
+        return JSONResponse(status_code=400, content={"error": "No fields provided"})
+
+    res = update_todo(todo_id, **fields)
     if not res.get("ok"):
+        # Differentiate not-found vs. no-op
         return JSONResponse(status_code=404, content={"error": "Todo not found"})
     return {"ok": True}
 
@@ -272,17 +301,23 @@ def delete_todo_route(todo_id: int):
 
 
 @router.post("/rules")
-def upload_rules(file: UploadFile = File(...)):
+def upload_rules(file: UploadFile = File(...), session_id: Optional[str] = Form(None)):
     """Replace the current rules file & store in DB as a new active context row."""
     content_bytes = file.file.read()
     content = content_bytes.decode('utf-8', errors='ignore')
-    add_rule_context('file', content, filename=file.filename, active=True)
+    if session_id:
+        create_chat_session(session_id)
+    add_rule_context('file', content, filename=file.filename, active=True, session_id=session_id)
+    try:
+        rag.set_session(session_id)
+    except Exception:
+        pass
     rag.rebuild()
     return {"ok": True, "chunks": len(rag.chunks)}
 
 
 @router.post("/context/add-text")
-def add_text_context(text: str = Form(...)):
+def add_text_context(text: str = Form(...), session_id: Optional[str] = Form(None)):
     """Add a block of pasted text as context for RAG."""
     cleaned = text.strip()
     if not cleaned:
@@ -301,30 +336,50 @@ def add_text_context(text: str = Form(...)):
                 else:
                     snippet = content_bytes.decode('utf-8', errors='ignore')
             block = f"[URL:{cleaned}]\n{snippet}"
-            add_rule_context('url', block, filename=cleaned)
+            if session_id:
+                create_chat_session(session_id)
+            add_rule_context('url', block, filename=cleaned, session_id=session_id)
         except Exception as e:
             # Store URL with failure note to keep traceability
             block = f"[URL_FETCH_FAILED:{cleaned}]\nError: {e}"
-            add_rule_context('url', block, filename=cleaned)
+            if session_id:
+                create_chat_session(session_id)
+            add_rule_context('url', block, filename=cleaned, session_id=session_id)
     else:
-        add_rule_context('text', cleaned)
+        if session_id:
+            create_chat_session(session_id)
+        add_rule_context('text', cleaned, session_id=session_id)
+    try:
+        rag.set_session(session_id)
+    except Exception:
+        pass
     rag.rebuild()
     return {"ok": True, "chunks": len(rag.chunks)}
 
 
 @router.post("/context/add-url-text")
-def add_url_text_context(url: str = Form(...), content: str = Form(...)):
+def add_url_text_context(url: str = Form(...), content: str = Form(...), session_id: Optional[str] = Form(None)):
     """Add content fetched from a URL (frontend is responsible for fetching)."""
     block = f"[URL:{url}]\n{content.strip()}"
-    add_rule_context('url', block, filename=url)
+    if session_id:
+        create_chat_session(session_id)
+    add_rule_context('url', block, filename=url, session_id=session_id)
+    try:
+        rag.set_session(session_id)
+    except Exception:
+        pass
     rag.rebuild()
     return {"ok": True, "chunks": len(rag.chunks)}
 
 
 @router.get("/context/status")
-def get_context_status():
+def get_context_status(session_id: Optional[str] = Query(None)):
     """Expose current RAG indexing status for the UI."""
     try:
+        try:
+            rag.set_session(session_id)
+        except Exception:
+            pass
         status = rag.status()
         # If index not ready and not currently building, trigger background build
         if not status.get("ready") and not status.get("building"):
@@ -340,8 +395,12 @@ def get_context_status():
 
 
 @router.get("/context/list")
-def list_context():
-    return {"items": get_rules_rows(), "chunks": len(rag.chunks)}
+def list_context(session_id: Optional[str] = Query(None)):
+    try:
+        rag.set_session(session_id)
+    except Exception:
+        pass
+    return {"items": get_rules_rows(session_id=session_id), "chunks": len(rag.chunks)}
 
 
 @router.get("/chat-sessions")

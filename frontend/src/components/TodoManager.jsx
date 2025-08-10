@@ -5,6 +5,7 @@ export default function TodoManager() {
 	const [newItem, setNewItem] = useState("");
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState(null);
+	const [draftItems, setDraftItems] = useState({});
 
 	const fetchTodos = async () => {
 		setLoading(true);
@@ -14,13 +15,14 @@ export default function TodoManager() {
 			if (!res.ok) throw new Error(res.statusText);
 			const data = await res.json();
 			setTodos(data.todos || []);
-		} catch (e) {
+		} catch {
 			setError("Failed to load todos");
 		} finally {
 			setLoading(false);
 		}
 	};
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
 	useEffect(() => {
 		fetchTodos();
 	}, []);
@@ -37,9 +39,9 @@ export default function TodoManager() {
 
 	const updateTodo = async (id, fields) => {
 		const form = new FormData();
-		Object.entries(fields).forEach(([k, v]) => {
+		for (const [k, v] of Object.entries(fields)) {
 			if (v !== undefined && v !== null) form.append(k, v);
-		});
+		}
 		await fetch(`/api/todos/${id}`, { method: "PUT", body: form });
 		fetchTodos();
 	};
@@ -59,6 +61,28 @@ export default function TodoManager() {
 		if (s === "pending") return "in_progress";
 		if (s === "in_progress") return "done";
 		return "pending";
+	};
+
+	const handleItemChange = (id, value) => {
+		setDraftItems((prev) => ({ ...prev, [id]: value }));
+	};
+
+	const handleItemBlur = async (todo) => {
+		const draft = draftItems[todo.id] ?? "";
+		const trimmed = draft.trim();
+		const original = todo.item;
+		if (!trimmed || trimmed === original) {
+			setDraftItems((prev) => {
+				const { [todo.id]: _omit, ...rest } = prev;
+				return rest;
+			});
+			return;
+		}
+		await updateTodo(todo.id, { item: trimmed });
+		setDraftItems((prev) => {
+			const { [todo.id]: _omit, ...rest } = prev;
+			return rest;
+		});
 	};
 
 	return (
@@ -92,18 +116,20 @@ export default function TodoManager() {
 				</button>
 			</form>
 
-			<div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-gray-600">
+			<div className="flex items-center justify-between text-[8px] uppercase tracking-wide text-gray-600">
 				<span>{todos.length} tasks</span>
 				<span className="flex gap-3">
 					<span className="flex items-center gap-1">
-						<span className="w-2 h-2 rounded-full bg-gray-400"></span>Pending
+						<span className="w-2 h-2 rounded-full bg-gray-400" />
+						Pending
 					</span>
 					<span className="flex items-center gap-1">
-						<span className="w-2 h-2 rounded-full bg-blue-500"></span>In
-						Progress
+						<span className="w-2 h-2 rounded-full bg-blue-500" />
+						In Progress
 					</span>
 					<span className="flex items-center gap-1">
-						<span className="w-2 h-2 rounded-full bg-green-500"></span>Done
+						<span className="w-2 h-2 rounded-full bg-green-500" />
+						Done
 					</span>
 				</span>
 			</div>
@@ -143,29 +169,12 @@ export default function TodoManager() {
 							{/* Text Input */}
 							<div className="flex flex-col flex-grow min-w-0">
 								<input
-									value={t.item}
-									onChange={(e) => updateTodo(t.id, { item: e.target.value })}
-									className={`w-full text-sm bg-transparent text-gray-800 border-b border-transparent focus:border-blue-500/70 focus:outline-none pb-0.5 transition placeholder-gray-400 ${t.status === "done" ? "line-through text-gray-500" : ""}`}
+									value={draftItems[t.id] ?? t.item}
+									onChange={(e) => handleItemChange(t.id, e.target.value)}
+									onBlur={() => handleItemBlur(t)}
+									className={`w-full text-sm bg-transparent text-gray-800 border-b border-transparent focus:border-blue-500/70 focus:outline-none transition placeholder-gray-400 ${t.status === "done" ? "line-through text-gray-500" : ""}`}
 									placeholder="Task description"
 								/>
-								<div className="flex items-center gap-2 mt-1 opacity-0 group-hover:opacity-100 transition text-[10px] text-gray-500">
-									<span className="flex items-center gap-1">
-										<i className="fas fa-flag text-gray-400"></i>Priority
-									</span>
-									<select
-										value={t.priority ?? 3}
-										onChange={(e) =>
-											updateTodo(t.id, { priority: e.target.value })
-										}
-										className="bg-gray-100 hover:bg-gray-200 text-gray-700 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 text-[10px]"
-									>
-										{[1, 2, 3, 4, 5].map((p) => (
-											<option key={p} value={p} className="text-black">
-												{p}
-											</option>
-										))}
-									</select>
-								</div>
 							</div>
 
 							{/* Delete */}
@@ -175,13 +184,19 @@ export default function TodoManager() {
 								title="Delete task"
 								className="opacity-40 hover:opacity-100 text-red-600 hover:text-red-500 transition mt-0.5"
 							>
-								<i className="fas fa-times"></i>
+								<i className="fas fa-times" />
 							</button>
 
-							{/* Accent gradient bar for priority */}
+							{/* Accent bar now reflects status only */}
 							<span
-								className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg ${t.priority <= 2 ? "bg-red-600" : t.priority === 3 ? "bg-amber-400" : t.priority >= 4 ? "bg-green-600" : "bg-gray-400"}`}
-							></span>
+								className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg ${
+									t.status === "pending"
+										? "bg-gray-400"
+										: t.status === "in_progress"
+											? "bg-blue-500"
+											: "bg-green-600"
+								}`}
+							/>
 						</li>
 					);
 				})}

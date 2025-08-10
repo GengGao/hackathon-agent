@@ -252,10 +252,10 @@ Add handle(s) here.
 | POST `/api/chat-stream` | Stream chat (SSE) with tool calls & thinking tokens |
 | GET `/api/todos` | List todos (`?detailed=true`) |
 | POST `/api/todos` | Add todo (form `item`) |
-| PUT `/api/todos/{id}` | Update fields (item/status/priority/sort_order) |
+| PUT `/api/todos/{id}` | Update fields (item/status/sort_order) |
 | DELETE `/api/todos/{id}` | Delete one |
 | DELETE `/api/todos` | Clear all |
-| POST `/api/rules` | Upload new rules file |
+| POST `/api/rules` | Upload new rules file (optional `session_id` to scope to a chat) |
 | GET `/api/chat-sessions` | List sessions (limit/offset) |
 | GET `/api/chat-sessions/{id}` | Session detail & messages |
 | PUT `/api/chat-sessions/{id}/title` | Rename session |
@@ -263,6 +263,10 @@ Add handle(s) here.
 | POST `/api/chat-sessions/{id}/derive-project-idea` | Generate & store idea |
 | POST `/api/chat-sessions/{id}/create-tech-stack` | Generate & store tech stack |
 | POST `/api/chat-sessions/{id}/summarize-chat-history` | Generate & store submission summary |
+| POST `/api/context/add-text` | Add pasted text context (optional `session_id`) |
+| POST `/api/context/add-url-text` | Add fetched URL content (optional `session_id`) |
+| GET `/api/context/status` | RAG status (accepts `session_id` query) |
+| GET `/api/context/list` | List context rows (accepts `session_id` query) |
 | GET `/api/ollama/status` | Model & availability |
 | POST `/api/ollama/model` | Switch active model |
 

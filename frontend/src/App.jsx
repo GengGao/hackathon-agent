@@ -32,6 +32,14 @@ function App() {
 	});
 	const [showModelPicker, setShowModelPicker] = useState(false);
 
+	const generateSessionId = useCallback(
+		() =>
+			globalThis?.crypto?.randomUUID
+				? globalThis.crypto.randomUUID()
+				: `session-${Date.now()}`,
+		[],
+	);
+
 	// Check Ollama status
 	const checkOllamaStatus = useCallback(async () => {
 		try {
@@ -71,30 +79,46 @@ function App() {
 		}
 	};
 
-	// Check RAG indexing status
-	const checkRagStatus = useCallback(async () => {
-		try {
-			const res = await fetch("/api/context/status");
-			if (!res.ok) throw new Error(res.statusText);
-			const data = await res.json();
-			setRagStatus(data);
-		} catch (error) {
-			console.error("Failed to check RAG status:", error);
-			setRagStatus((prev) => ({ ...prev, ready: false, building: false }));
-		}
-	}, []);
+	// Check RAG indexing status (no polling). Accepts optional session id for precise checks.
+	const checkRagStatus = useCallback(
+		async (sessionIdOverride) => {
+			const sid = sessionIdOverride ?? currentSessionId;
+			try {
+				const res = await fetch(
+					`/api/context/status${sid ? `?session_id=${encodeURIComponent(sid)}` : ""}`,
+				);
+				if (!res.ok) throw new Error(res.statusText);
+				const data = await res.json();
+				setRagStatus(data);
+			} catch (error) {
+				console.error("Failed to check RAG status:", error);
+				setRagStatus((prev) => ({ ...prev, ready: false, building: false }));
+			}
+		},
+		[currentSessionId],
+	);
 
-	// Periodic status checking
+	// Status checking: keep Ollama polling, remove RAG polling. RAG is checked on session changes and context updates.
 	useEffect(() => {
-		checkOllamaStatus(); // Initial check
-		checkRagStatus(); // Initial RAG check
+		checkOllamaStatus(); // Initial Ollama check
 		const interval1 = setInterval(checkOllamaStatus, 10000); // every 10s
-		const interval2 = setInterval(checkRagStatus, 3000); // every 3s
 		return () => {
 			clearInterval(interval1);
-			clearInterval(interval2);
 		};
-	}, [checkOllamaStatus, checkRagStatus]);
+	}, [checkOllamaStatus]);
+
+	// Ensure a session exists even for a brand-new chat before adding context
+	useEffect(() => {
+		if (!currentSessionId) {
+			setCurrentSessionId(generateSessionId());
+		}
+	}, [currentSessionId, generateSessionId]);
+
+	// Check RAG status once when session becomes available or changes (initial load and chat switch)
+	useEffect(() => {
+		if (!currentSessionId) return;
+		checkRagStatus(currentSessionId);
+	}, [currentSessionId, checkRagStatus]);
 
 	// Close model picker when clicking outside
 	useEffect(() => {
@@ -311,11 +335,20 @@ function App() {
 		}
 
 		try {
+			// Ensure we have a session to associate context with
+			let sid = currentSessionId;
+			if (!sid) {
+				sid = globalThis?.crypto?.randomUUID
+					? globalThis.crypto.randomUUID()
+					: `session-${Date.now()}`;
+				setCurrentSessionId(sid);
+			}
 			// Upload files (if any)
 			for (const f of uploadedFiles) {
 				if (f.raw) {
 					const formData = new FormData();
 					formData.append("file", f.raw, f.name);
+					if (sid) formData.append("session_id", sid);
 					await fetch("/api/rules", { method: "POST", body: formData });
 				}
 			}
@@ -323,13 +356,14 @@ function App() {
 			if (urlText.trim()) {
 				const formData = new FormData();
 				formData.append("text", urlText);
+				if (sid) formData.append("session_id", sid);
 				await fetch("/api/context/add-text", {
 					method: "POST",
 					body: formData,
 				});
 			}
 			// Refresh RAG status immediately after context change
-			await checkRagStatus();
+			await checkRagStatus(sid);
 			setMessages((prev) => [
 				...prev,
 				{
@@ -476,7 +510,8 @@ function App() {
 	};
 
 	const handleNewChat = () => {
-		setCurrentSessionId(null);
+		const sid = generateSessionId();
+		setCurrentSessionId(sid);
 		setMessages([]);
 		setUrlText("");
 		setUploadedFiles([]);
@@ -486,7 +521,7 @@ function App() {
 		try {
 			const response = await fetch(`/api/chat-sessions/${sessionId}`);
 			if (!response.ok) throw new Error(response.statusText);
-            const { messages: chatMessages } = await response.json();
+			const { messages: chatMessages } = await response.json();
 
 			setCurrentSessionId(sessionId);
 			setMessages(
@@ -561,7 +596,7 @@ function App() {
 
 						{/* Model Picker Dropdown */}
 						{showModelPicker && (
-							<div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 py-2 min-w-48 z-50">
+							<div className="absolute top-full right-0 mt-2 bg-white rounded-lg shadow-xl dropdown-shadow border border-gray-200 py-2 min-w-48 z-50">
 								<div className="px-3 py-2 text-xs text-gray-500 border-b border-gray-100">
 									Select Model
 								</div>
@@ -652,9 +687,11 @@ function App() {
 					</div>
 
 					{/* Context & Rules */}
-					<div className="w-full flex-1 min-h-0 glass-effect-readable rounded-xl shadow-xl p-4 flex flex-col overflow-y-auto">
-						<div className="flex items-center justify-between mb-3 border-b border-white/20 pb-2">
+					<div className="w-full flex-1 min-h-0 glass-effect-readable rounded-xl shadow-xl flex flex-col overflow-hidden">
+						{/* Fixed header */}
+						<div className="section-header shrink-0">
 							<h2 className="text-lg font-semibold gradient-text">
+								<i className="fas fa-layer-group mr-2 text-blue-500" />
 								Hackathon Context
 							</h2>
 							<div
@@ -682,58 +719,63 @@ function App() {
 								)}
 							</div>
 						</div>
-						<p className="text-sm text-readable-light mb-4">
-							Paste rules, URLs, or drag & drop files to give the agent context.
-						</p>
+						{/* Scrollable content */}
+						<div className="flex-1 min-h-0 overflow-y-auto p-3">
+							<p className="text-sm text-readable-light mb-4">
+								Paste rules, URLs, or drag & drop files to give the agent
+								context.
+							</p>
 
-						<FileDrop
-							uploadedFiles={uploadedFiles}
-							setUploadedFiles={setUploadedFiles}
-						/>
+							<FileDrop
+								uploadedFiles={uploadedFiles}
+								setUploadedFiles={setUploadedFiles}
+							/>
 
-                        <textarea
-							name="user-context"
-							placeholder="Or paste text/URLs here..."
-                            className="context-textarea w-full mt-4 border border-white/20 text-sm enhanced-input placeholder-gray-500"
-							value={urlText}
-							onChange={(e) => setUrlText(e.target.value)}
-						/>
-						<button
-							onClick={setContext}
-                            className="context-button mt-2 btn-gradient font-bold px-4 transition-all duration-300"
-							type="button"
-						>
-							<i className="fas fa-check-circle mr-2" />
-							Set Context
-						</button>
-						<div className="mt-3 text-sm space-y-1">
-							{uploadedFiles.length > 0 && (
-								<>
-									<p className="font-semibold text-readable-dark">
-										Context Files:
-									</p>
-									{uploadedFiles.map((file, index) => (
-										<div
-											key={`${file.name}-${index}`}
-											className="flex items-center justify-between glass-effect-readable p-2 rounded-lg border border-white/10"
-										>
-											<span className="text-readable-dark">{file.name}</span>
-											<button
-												onClick={() => {
-													const newFiles = uploadedFiles.filter(
-														(_, i) => i !== index,
-													);
-													setUploadedFiles(newFiles);
-												}}
-												className="ml-2 text-red-500 hover:text-red-600 transition-colors"
-												type="button"
+							<textarea
+								name="user-context"
+								placeholder="Or paste text/URLs here..."
+								className="context-textarea w-full mt-4 border border-white/20 text-sm enhanced-input placeholder-gray-500"
+								value={urlText}
+								onChange={(e) => setUrlText(e.target.value)}
+							/>
+							<button
+								onClick={setContext}
+								className="context-button mt-2 btn-gradient font-bold px-4 transition-all duration-300"
+								type="button"
+								aria-label="Set context for this chat session"
+							>
+								<i className="fas fa-check-circle mr-2" />
+								Set Context
+							</button>
+							<div className="mt-3 text-sm space-y-1">
+								{uploadedFiles.length > 0 && (
+									<>
+										<p className="font-semibold text-readable-dark">
+											Context Files:
+										</p>
+										{uploadedFiles.map((file, index) => (
+											<div
+												key={`${file.name}-${index}`}
+												className="flex items-center justify-between glass-effect-readable p-2 rounded-lg border border-white/10"
 											>
-												<i className="fas fa-times" />
-											</button>
-										</div>
-									))}
-								</>
-							)}
+												<span className="text-readable-dark">{file.name}</span>
+												<button
+													onClick={() => {
+														const newFiles = uploadedFiles.filter(
+															(_, i) => i !== index,
+														);
+														setUploadedFiles(newFiles);
+													}}
+													className="ml-2 text-red-500 hover:text-red-600 transition-colors"
+													type="button"
+												>
+													<i className="fas fa-times" />
+												</button>
+											</div>
+										))}
+									</>
+								)}
+							</div>
 						</div>
 					</div>
 				</div>
@@ -752,86 +794,95 @@ function App() {
 				</div>
 
 				{/* Right Panel: Project Dashboard with glassmorphism */}
-				<div className="w-full lg:w-1/4 h-full min-h-0 glass-effect-readable rounded-xl shadow-xl p-4 flex flex-col overflow-y-auto float-animation">
-					<h2 className="text-lg font-semibold mb-3 border-b border-white/20 pb-2 gradient-text">
-						Project Dashboard
-					</h2>
-					<div className="space-y-4 text-sm">
-						<div className="glass-effect-readable p-3 rounded-lg border border-white/10">
-							<div className="flex items-center justify-between mb-2">
-								<h3 className="font-semibold text-readable-dark">
-									<i className="fas fa-lightbulb mr-2 text-yellow-500" />
-									Project Idea
-								</h3>
-								<button
-									onClick={generateProjectIdea}
-									className="text-xs bg-yellow-500 hover:bg-yellow-600 text-white px-2 py-1 rounded transition-colors"
-									title="Generate from chat history"
-									type="button"
-								>
-									<i className="fas fa-magic mr-1" />
-									Generate
-								</button>
-							</div>
-							<p className="text-readable-light italic">{dashboardData.idea}</p>
-						</div>
-						<div className="glass-effect-readable p-3 rounded-lg border border-white/10">
-							<div className="flex items-center justify-between mb-2">
-								<h3 className="font-semibold text-readable-dark">
-									<i className="fas fa-cogs mr-2 text-blue-500" />
-									Tech Stack
-								</h3>
-								<button
-									onClick={generateTechStack}
-									className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded transition-colors"
-									title="Generate from chat history"
-									type="button"
-								>
-									<i className="fas fa-magic mr-1" />
-									Generate
-								</button>
-							</div>
-							<p className="text-readable-light italic">
-								{dashboardData.stack}
-							</p>
-						</div>
-						<div className="glass-effect-readable p-3 rounded-lg border border-white/10">
-							<h3 className="font-semibold text-readable-dark mb-2">
-								<i className="fas fa-tasks mr-2 text-green-500" />
-								To-Do List
-							</h3>
-							<TodoManager />
-						</div>
-						<div className="glass-effect-readable p-3 rounded-lg border border-white/10">
-							<div className="flex items-center justify-between mb-2">
-								<h3 className="font-semibold text-readable-dark">
-									<i className="fas fa-file-alt mr-2 text-purple-500" />
-									Submission Notes
-								</h3>
-								<button
-									onClick={generateSubmissionNotes}
-									className="text-xs bg-purple-500 hover:bg-purple-600 text-white px-2 py-1 rounded transition-colors"
-									title="Generate from chat history"
-									type="button"
-								>
-									<i className="fas fa-magic mr-1" />
-									Generate
-								</button>
-							</div>
-							<p className="text-readable-light italic">
-								{dashboardData.submission}
-							</p>
-						</div>
+				<div className="w-full lg:w-1/4 h-full min-h-0 glass-effect-readable rounded-xl shadow-xl flex flex-col overflow-hidden float-animation">
+					{/* Fixed header */}
+					<div className="section-header shrink-0">
+						<h2 className="text-lg font-semibold gradient-text">
+							<i className="fas fa-gauge mr-2 text-purple-500" />
+							Project Dashboard
+						</h2>
 					</div>
-					<div className="mt-auto pt-4">
-						<button
-							onClick={updateDashboard}
-							className="mt-2 w-full btn-gradient font-bold py-2 px-4 rounded-lg transition-all duration-300"
-							type="button"
-						>
-							<i className="fas fa-sync-alt mr-2" />
-							Update Dashboard
-						</button>
+					{/* Scrollable content */}
+					<div className="flex-1 min-h-0 overflow-y-auto p-3">
+						<div className="space-y-4 text-sm">
+							<div className="glass-effect-readable p-3 rounded-lg border border-white/10">
+								<div className="flex items-center justify-between mb-2">
+									<h3 className="font-semibold text-readable-dark">
+										<i className="fas fa-lightbulb mr-2 text-yellow-500" />
+										Project Idea
+									</h3>
+									<button
+										onClick={generateProjectIdea}
+										className="text-xs bg-yellow-500 hover:bg-yellow-600 text-white px-2 py-1 rounded transition-colors"
+										title="Generate from chat history"
+										type="button"
+									>
+										<i className="fas fa-magic mr-1" />
+										Generate
+									</button>
+								</div>
+								<p className="text-readable-light italic">
+									{dashboardData.idea}
+								</p>
+							</div>
+							<div className="glass-effect-readable p-3 rounded-lg border border-white/10">
+								<div className="flex items-center justify-between mb-2">
+									<h3 className="font-semibold text-readable-dark">
+										<i className="fas fa-cogs mr-2 text-blue-500" />
+										Tech Stack
+									</h3>
+									<button
+										onClick={generateTechStack}
+										className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded transition-colors"
+										title="Generate from chat history"
+										type="button"
+									>
+										<i className="fas fa-magic mr-1" />
+										Generate
+									</button>
+								</div>
+								<p className="text-readable-light italic">
+									{dashboardData.stack}
+								</p>
+							</div>
+							<div className="glass-effect-readable p-3 rounded-lg border border-white/10">
+								<h3 className="font-semibold text-readable-dark mb-2">
+									<i className="fas fa-tasks mr-2 text-green-500" />
+									To-Do List
+								</h3>
+								<TodoManager />
+							</div>
+							<div className="glass-effect-readable p-3 rounded-lg border border-white/10">
+								<div className="flex items-center justify-between mb-2">
+									<h3 className="font-semibold text-readable-dark">
+										<i className="fas fa-file-alt mr-2 text-purple-500" />
+										Submission Notes
+									</h3>
+									<button
+										onClick={generateSubmissionNotes}
+										className="text-xs bg-purple-500 hover:bg-purple-600 text-white px-2 py-1 rounded transition-colors"
+										title="Generate from chat history"
+										type="button"
+									>
+										<i className="fas fa-magic mr-1" />
+										Generate
+									</button>
+								</div>
+								<p className="text-readable-light italic">
+									{dashboardData.submission}
+								</p>
+							</div>
+						</div>
+						<div className="pt-3">
+							<button
+								onClick={updateDashboard}
+								className="mt-2 w-full btn-gradient font-bold py-2 px-4 rounded-lg transition-all duration-300"
+								type="button"
+							>
+								<i className="fas fa-sync-alt mr-2" />
+								Update Dashboard
+							</button>
+						</div>
 					</div>
 				</div>
 			</div>

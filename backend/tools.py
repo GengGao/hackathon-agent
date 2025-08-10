@@ -37,7 +37,7 @@ def list_todos(detailed: bool = False) -> List[Any]:
             d = {"id": r["id"], "item": r["item"]}
             # sqlite3.Row supports 'k in row.keys()' and item access
             existing_keys = set(r.keys())  # type: ignore
-            for k in ("status", "priority", "sort_order", "created_at", "updated_at", "completed_at"):
+            for k in ("status", "sort_order", "created_at", "updated_at", "completed_at"):
                 if k in existing_keys:
                     d[k] = r[k]
             out.append(d)
@@ -69,7 +69,11 @@ def delete_todo(todo_id: int) -> Dict[str, Any]:
 def list_directory(path: str = ".") -> Dict[str, Any]:
     # Limited, safe directory listing relative to project root
     root = Path(__file__).resolve().parents[1]
-    candidate = (root / path).resolve()
+    # Normalize path to handle Windows-style separators and traversal attempts consistently
+    normalized = (path or ".").replace("\\", "/").strip()
+    if normalized == "":
+        normalized = "."
+    candidate = (root / normalized).resolve()
     if not str(candidate).startswith(str(root)):
         return {"ok": False, "error": "Path outside project root is not allowed"}
     if not candidate.exists() or not candidate.is_dir():
