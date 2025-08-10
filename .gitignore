@@ -28,3 +28,4 @@ dist-ssr
 **/.venv/*
 **/__pycache__/*
 **/app.db
+backend/data/rag_cache/*

@@ -22,7 +22,7 @@ Status: planned | in_progress | done | deferred
 |----|---|--------|------|---------|
 | G-001 | P0 | planned | Export | Submission ZIP pack (artifacts + todos + rules) |
 | G-002 | P0 | planned | Export | Download endpoints for individual artifacts (markdown) |
-| G-003 | P0 | planned | RAG | Embedding cache persistence keyed by rules hash |
+| G-003 | P0 | in_progress | RAG | Embedding cache persistence keyed by rules hash |
 | G-004 | P0 | planned | Stability | SSE stream ordering test (thinking/tool_calls/token/end) |
 | G-005 | P1 | planned | Observability | JSON logs + minimal `/api/health` counters |
 | G-006 | P1 | planned | Security | Harden URL ingestion (redirect cap, stricter mime) |
@@ -49,7 +49,8 @@ Endpoint: `GET /api/chat-sessions/{id}/artifact/{type}.md` streamed with `Conten
 Acceptance: 200 when exists; 404 otherwise; unit tests.
 
 #### G-003 – Embedding Cache (P0)
-Persist embeddings+chunks under `data/rules_index.*` keyed by rules hash. Warm start <300ms for ~1k chunks. Unit test verifies reuse.
+Implemented cache under `backend/data/rag_cache/<rules_hash>/` storing `chunks.json`, `meta.json`, and `embeddings.npy`. On rebuild (non-forced), attempts to load cache before recomputing; warm start uses cached FAISS index.
+Acceptance (remaining): warm start <300ms for ~1k chunks; add unit test verifying reuse on unchanged rules.
 
 #### G-004 – SSE Ordering Test (P0)
 Deterministic integration test ensuring order: `session_info` → `rule_chunks` → (`thinking`/`tool_calls`)* → `token` → `end`.

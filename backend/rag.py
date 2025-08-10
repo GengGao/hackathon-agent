@@ -54,6 +54,7 @@ class RuleRAG:
         self._is_rebuilding: bool = False
         self._last_built_at: Optional[float] = None
         self._session_id: Optional[str] = None
+
         # Cache location (under backend/data/rag_cache)
         try:
             from models.db import DATA_DIR  # lazy import to avoid circular at module import time
