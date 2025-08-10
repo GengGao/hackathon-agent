@@ -136,6 +136,51 @@ function App() {
 		};
 	}, [checkOllamaStatus]);
 
+	const refreshDashboard = useCallback(async () => {
+		try {
+			if (!currentSessionId) return;
+			const todosRes = await fetch(
+				`/api/todos?session_id=${encodeURIComponent(currentSessionId)}`,
+			);
+			const todosData = todosRes.ok ? await todosRes.json() : { todos: [] };
+			let artifacts = {};
+			try {
+				const artifactsRes = await fetch(
+					`/api/chat-sessions/${currentSessionId}/project-artifacts`,
+				);
+				if (artifactsRes.ok) {
+					const artifactsData = await artifactsRes.json();
+					artifacts = (artifactsData.artifacts || []).reduce(
+						(acc, artifact) => {
+							acc[artifact.artifact_type] = artifact;
+							return acc;
+						},
+						{},
+					);
+				}
+			} catch {
+				// ignore artifact fetch errors; dashboard will show defaults
+			}
+			setDashboardData({
+				idea:
+					artifacts.project_idea?.content ||
+					"Generate a project idea from your chat history using the tools below.",
+				stack:
+					artifacts.tech_stack?.content ||
+					"Generate a tech stack recommendation from your conversation.",
+				todos:
+					todosData.todos && todosData.todos.length > 0
+						? todosData.todos
+						: ["No tasks yet."],
+				submission:
+					artifacts.submission_summary?.content ||
+					"Generate submission notes from your chat history when ready.",
+			});
+		} catch (err) {
+			console.error(err);
+		}
+	}, [currentSessionId]);
+
 	// Ensure a session exists even for a brand-new chat before adding context
 	useEffect(() => {
 		if (!currentSessionId) {
@@ -148,6 +193,12 @@ function App() {
 		if (!currentSessionId) return;
 		checkRagStatus(currentSessionId);
 	}, [currentSessionId, checkRagStatus]);
+
+	// Auto-refresh dashboard on page load and when session changes
+	useEffect(() => {
+		if (!currentSessionId) return;
+		refreshDashboard();
+	}, [currentSessionId, refreshDashboard]);
 
 	// Close model picker when clicking outside
 	useEffect(() => {
@@ -413,58 +464,6 @@ function App() {
 		}
 	};
 
-	const updateDashboard = async () => {
-		try {
-			// Get todos (session-scoped)
-			const todosRes = await fetch(
-				`/api/todos${currentSessionId ? `?session_id=${encodeURIComponent(currentSessionId)}` : ""}`,
-			);
-			const todosData = todosRes.ok ? await todosRes.json() : { todos: [] };
-
-			// Get project artifacts if we have a session
-			let artifacts = {};
-			if (currentSessionId) {
-				try {
-					const artifactsRes = await fetch(
-						`/api/chat-sessions/${currentSessionId}/project-artifacts`,
-					);
-					if (artifactsRes.ok) {
-						const artifactsData = await artifactsRes.json();
-						artifacts = (artifactsData.artifacts || []).reduce(
-							(acc, artifact) => {
-								acc[artifact.artifact_type] = artifact;
-								return acc;
-							},
-							{},
-						);
-					} else {
-						console.log("Artifacts fetch failed", artifactsRes.status);
-					}
-				} catch (artifactError) {
-					console.log("No artifacts found yet:", artifactError);
-				}
-			}
-
-			setDashboardData({
-				idea:
-					artifacts.project_idea?.content ||
-					"Generate a project idea from your chat history using the tools below.",
-				stack:
-					artifacts.tech_stack?.content ||
-					"Generate a tech stack recommendation from your conversation.",
-				todos:
-					todosData.todos && todosData.todos.length > 0
-						? todosData.todos
-						: ["No tasks yet."],
-				submission:
-					artifacts.submission_summary?.content ||
-					"Generate submission notes from your chat history when ready.",
-			});
-		} catch (e) {
-			console.error(e);
-		}
-	};
-
 	const generateProjectIdea = async () => {
 		if (!currentSessionId) {
 			alert("Please start a chat session first");
@@ -516,7 +515,7 @@ function App() {
 					idx = buffer.indexOf("\n\n");
 				}
 			}
-			updateDashboard();
+			refreshDashboard();
 		} catch (error) {
 			console.error("Error generating project idea:", error);
 			alert("Failed to generate project idea");
@@ -576,7 +575,7 @@ function App() {
 					idx = buffer.indexOf("\n\n");
 				}
 			}
-			updateDashboard();
+			refreshDashboard();
 		} catch (error) {
 			console.error("Error generating tech stack:", error);
 			alert("Failed to generate tech stack");
@@ -636,7 +635,7 @@ function App() {
 					idx = buffer.indexOf("\n\n");
 				}
 			}
-			updateDashboard();
+			refreshDashboard();
 		} catch (error) {
 			console.error("Error generating submission notes:", error);
 			alert("Failed to generate submission notes");
@@ -674,8 +673,7 @@ function App() {
 			setUrlText("");
 			setUploadedFiles([]);
 
-			// Update dashboard with session-specific data
-			setTimeout(updateDashboard, 100); // Small delay to ensure session is set
+			// Dashboard will auto-refresh on session change via effect
 		} catch (error) {
 			console.error("Failed to load session:", error);
 		}
@@ -1024,7 +1022,7 @@ function App() {
 						</div>
 						<div className="pt-3">
 							<button
-								onClick={updateDashboard}
+								onClick={refreshDashboard}
 								className="mt-2 w-full btn-gradient font-bold py-2 px-4 rounded-lg transition-all duration-300"
 								type="button"
 							>
