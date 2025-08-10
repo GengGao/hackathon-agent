@@ -200,6 +200,16 @@ def list_directory(path: str = ".") -> Dict[str, Any]:
     return {"ok": True, "items": items}
 
 
+def get_session_id(session_id: Optional[str] = None) -> Dict[str, Any]:
+    """Return the current chat session id injected by the request pipeline.
+
+    When called within the chat-stream flow, the router supplies the active
+    session_id automatically to all tool calls. This function surfaces it to
+    the model so it never needs to ask the user.
+    """
+    return {"ok": True, "session_id": session_id}
+
+
 def derive_project_idea(session_id: str) -> Dict[str, Any]:
     """Analyze chat history to derive and save a project idea.
 
@@ -530,12 +540,24 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
         {
             "type": "function",
             "function": {
+                "name": "get_session_id",
+                "description": "Return the active chat session_id so the model never needs to ask the user.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"session_id": {"type": "string"}},
+                    "required": []
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "list_todos",
                 "description": "List the current to-do items maintained by the agent.",
                 "parameters": {
                     "type": "object",
                     "properties": {"session_id": {"type": "string"}},
-                    "required": ["session_id"]
+                    "required": []
                 },
             },
         },
@@ -543,7 +565,7 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "add_todo",
-                "description": "Add a new item to the agent to-do list.",
+                "description": "Add a new item to the agent to-do list. ONLY add if the user asks for it.",
                 "parameters": {
                     "type": "object",
                     "properties": {"item": {"type": "string"}, "session_id": {"type": "string"}},
@@ -615,6 +637,7 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
 
 
 FUNCTION_DISPATCH = {
+    "get_session_id": lambda **kwargs: get_session_id(session_id=kwargs.get("session_id")),
     "list_todos": lambda **kwargs: list_todos(session_id=kwargs.get("session_id")),
     "add_todo": lambda **kwargs: add_todo(kwargs.get("item", ""), session_id=kwargs.get("session_id")),
     "clear_todos": lambda **kwargs: clear_todos(session_id=kwargs.get("session_id")),

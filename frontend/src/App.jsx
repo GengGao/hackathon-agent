@@ -31,6 +31,7 @@ function App() {
 		available_models: [],
 	});
 	const [showModelPicker, setShowModelPicker] = useState(false);
+	const [todosRefreshKey, setTodosRefreshKey] = useState(0);
 
 	// Streaming state for artifact generators
 	const [isStreamingIdea, setIsStreamingIdea] = useState(false);
@@ -176,6 +177,8 @@ function App() {
 					artifacts.submission_summary?.content ||
 					"Generate submission notes from your chat history when ready.",
 			});
+			// Force TodoManager to refetch so UI reflects latest state
+			setTodosRefreshKey((prev) => prev + 1);
 		} catch (err) {
 			console.error(err);
 		}
@@ -993,7 +996,10 @@ function App() {
 									<i className="fas fa-tasks mr-2 text-green-500" />
 									To-Do List
 								</h3>
-								<TodoManager currentSessionId={currentSessionId} />
+								<TodoManager
+									currentSessionId={currentSessionId}
+									refreshKey={todosRefreshKey}
+								/>
 							</div>
 							<div className="glass-effect-readable p-3 rounded-lg border border-white/10">
 								<div className="flex items-center justify-between mb-2">

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-export default function TodoManager({ currentSessionId }) {
+export default function TodoManager({ currentSessionId, refreshKey }) {
 	const [todos, setTodos] = useState([]);
 	const [newItem, setNewItem] = useState("");
 	const [loading, setLoading] = useState(false);
@@ -26,7 +26,15 @@ export default function TodoManager({ currentSessionId }) {
 		}
 	}, [currentSessionId]);
 
+	const lastRefreshKeyRef = useRef(refreshKey);
 	useEffect(() => {
+		// React to parent-triggered refreshes
+		lastRefreshKeyRef.current = refreshKey;
+		fetchTodos();
+	}, [refreshKey, fetchTodos]);
+
+	useEffect(() => {
+		// Load on mount and when session changes
 		fetchTodos();
 	}, [fetchTodos]);
 
