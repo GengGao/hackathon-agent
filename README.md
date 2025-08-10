@@ -112,7 +112,7 @@ Frontend default: http://localhost:5173
    - `POST /api/chat-sessions/{id}/derive-project-idea`
    - `POST /api/chat-sessions/{id}/create-tech-stack`
    - `POST /api/chat-sessions/{id}/summarize-chat-history`
-5. Review artifacts (export ZIP coming soon).
+5. Review artifacts.
 
 ---
 ## 8. Tooling (Function Calls)
@@ -182,7 +182,7 @@ See [GAP.md](./GAP.md) for full prioritized list (P0→P3). Immediate targets:
 ---
 ## 14. Devpost Submission Checklist
 - [ ] Public repo with this README
-- [ ] LICENSE file (add MIT or Apache 2.0)
+- [ ] LICENSE file present (MIT)
 - [ ] 3‑minute demo video (offline proof + tool calls visible)
 - [ ] Screenshots (Chat, Todos, RAG retrieval, Artifacts)
 - [ ] Category justification paragraph
@@ -263,7 +263,6 @@ Add handle(s) here.
 | POST `/api/chat-sessions/{id}/derive-project-idea` | Generate & store idea |
 | POST `/api/chat-sessions/{id}/create-tech-stack` | Generate & store tech stack |
 | POST `/api/chat-sessions/{id}/summarize-chat-history` | Generate & store submission summary |
-| POST `/api/context/add-text` | Add pasted text context (optional `session_id`) |
 | POST `/api/context/add-text` | Add pasted text or fetched URL snippet (optional `session_id`) |
 | GET `/api/context/status` | RAG status (accepts `session_id` query) |
 | GET `/api/context/list` | List context rows (accepts `session_id` query) |

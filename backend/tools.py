@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, AsyncGenerator, Optional, Callable
 import asyncio
-import json
-import os
 from models.db import (
     list_todos_db, add_todo_db, clear_todos_db, update_todo_db, delete_todo_db,
     get_chat_messages, save_project_artifact, get_project_artifact,
@@ -16,25 +14,6 @@ from prompts import (
     PROJECT_IDEA_SYSTEM_PROMPT,
     SUBMISSION_SUMMARY_SYSTEM_PROMPT,
 )
-
-
-DATA_DIR = Path(__file__).parent / "data"
-DATA_DIR.mkdir(exist_ok=True)
-
-
-def _read_json_file(path: Path, default: Any) -> Any:
-    if not path.exists():
-        return default
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return default
-
-
-def _write_json_file(path: Path, data: Any) -> None:
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
 def _shorten(text: str, limit: int = 220) -> str:
     return (text[: limit - 3] + "...") if len(text) > limit else text
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export default function TodoManager({ currentSessionId }) {
 	const [todos, setTodos] = useState([]);
@@ -7,7 +7,7 @@ export default function TodoManager({ currentSessionId }) {
 	const [error, setError] = useState(null);
 	const [draftItems, setDraftItems] = useState({});
 
-	const fetchTodos = async () => {
+	const fetchTodos = useCallback(async () => {
 		setLoading(true);
 		setError(null);
 		try {
@@ -24,13 +24,11 @@ export default function TodoManager({ currentSessionId }) {
 		} finally {
 			setLoading(false);
 		}
-	};
+	}, [currentSessionId]);
 
-	// biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
 	useEffect(() => {
 		fetchTodos();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [currentSessionId]);
+	}, [fetchTodos]);
 
 	const addTodo = async (e) => {
 		e.preventDefault();

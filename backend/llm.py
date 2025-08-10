@@ -1,9 +1,7 @@
-import litellm
 from typing import Dict, AsyncGenerator, Union, List, Any, Callable, Optional
 import asyncio
 import json
 from openai import AsyncOpenAI
-import json
 import os
 
 # ---------------------------------------------------------
@@ -30,8 +28,10 @@ async def initialize_models():
             global current_model
             current_model = saved
     except Exception as e:
-        print(f"[initialize_models] restore failed: {e}")
-    print(f"Initialized models: {AVAILABLE_MODELS}; current={current_model}")
+        if DEBUG_STREAM:
+            print(f"[initialize_models] restore failed: {e}")
+    if DEBUG_STREAM:
+        print(f"Initialized models: {AVAILABLE_MODELS}; current={current_model}")
 
 async def fetch_available_models():
     """Fetch available models from Ollama and update AVAILABLE_MODELS."""
@@ -45,12 +45,9 @@ async def fetch_available_models():
     except Exception as e:
         # Fallback to default models if Ollama is not available
         AVAILABLE_MODELS = ["gpt-oss:20b", "gpt-oss:120b"]
-        print(f"Failed to fetch models from Ollama: {e}. Using fallback models.")
+        if DEBUG_STREAM:
+            print(f"Failed to fetch models from Ollama: {e}. Using fallback models.")
         return AVAILABLE_MODELS
-
-# Configure LiteLLM for Ollama
-litellm.set_verbose = False
-litellm.api_base = OLLAMA_BASE_URL
 
 # Initialize OpenAI client for direct Ollama API calls
 client = AsyncOpenAI(
@@ -342,18 +339,7 @@ async def set_model(model_name: str):
             from models.db import set_setting
             set_setting("current_model", model_name)
         except Exception as e:
-            print(f"[set_model] persist failed: {e}")
+            if DEBUG_STREAM:
+                print(f"[set_model] persist failed: {e}")
         return True
     return False
-
-        # # Use LiteLLM for streaming (COMMENTED OUT)
-        # response = litellm.completion(
-        #     model=f"ollama/{OLLAMA_MODEL}",
-        #     messages=messages,
-        #     temperature=temperature,
-        #     max_tokens=max_tokens,
-        #     stream=True,
-        #     api_base=OLLAMA_BASE_URL,
-        #     api_key=DUMMY_API_KEY,
-        #     thinking=False
-        # )

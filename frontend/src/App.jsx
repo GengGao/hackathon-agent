@@ -4,7 +4,7 @@ import ChatHistory from "./components/ChatHistory";
 import FileDrop from "./components/FileDrop";
 import TodoManager from "./components/TodoManager";
 
-// All network requests use native fetch (axios removed)
+// Network requests use native fetch
 
 function App() {
 	const [messages, setMessages] = useState([]);
@@ -59,7 +59,7 @@ function App() {
 			</ul>
 		);
 	};
-	// streaming flags removed (not used directly in UI)
+	// Helper component for streaming placeholders
 
 	const generateSessionId = useCallback(
 		() =>
@@ -127,7 +127,7 @@ function App() {
 		[currentSessionId],
 	);
 
-	// Status checking: keep Ollama polling, remove RAG polling. RAG is checked on session changes and context updates.
+	// Status checking: Ollama polling; RAG checked on session/context changes
 	useEffect(() => {
 		checkOllamaStatus(); // Initial Ollama check
 		const interval1 = setInterval(checkOllamaStatus, 10000); // every 10s

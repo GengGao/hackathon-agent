@@ -3,14 +3,11 @@ uvicorn[standard]
 python-multipart
 faiss-cpu
 sentence-transformers
-jinja2
 pydantic
-python-dotenv
 pdfminer.six
 python-docx
-pytesseract   # optional (used for image OCR in multi-file ingestion)
+pytesseract
 Pillow
-litellm
 openai
 numpy
 pytest
