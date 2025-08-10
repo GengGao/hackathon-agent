@@ -343,7 +343,7 @@ def delete_todo_route(todo_id: int):
     return {"ok": True}
 
 
-@router.post("/rules")
+@router.post("/context/rules")
 def upload_rules(file: UploadFile = File(...), session_id: Optional[str] = Form(None)):
     """Replace the current rules file & store in DB as a new active context row."""
     content_bytes = file.file.read()
@@ -399,20 +399,6 @@ def add_text_context(text: str = Form(...), session_id: Optional[str] = Form(Non
     rag.rebuild()
     return {"ok": True, "chunks": len(rag.chunks)}
 
-
-@router.post("/context/add-url-text")
-def add_url_text_context(url: str = Form(...), content: str = Form(...), session_id: Optional[str] = Form(None)):
-    """Add content fetched from a URL (frontend is responsible for fetching)."""
-    block = f"[URL:{url}]\n{content.strip()}"
-    if session_id:
-        create_chat_session(session_id)
-    add_rule_context('url', block, filename=url, session_id=session_id)
-    try:
-        rag.set_session(session_id)
-    except Exception:
-        pass
-    rag.rebuild()
-    return {"ok": True, "chunks": len(rag.chunks)}
 
 
 @router.get("/context/status")

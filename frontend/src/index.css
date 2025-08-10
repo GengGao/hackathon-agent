@@ -473,3 +473,30 @@ h6 {
   border-radius: 0.5rem;
   flex-shrink: 0;
 }
+
+.rule-chunks {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  overflow: hidden;
+  cursor: auto;
+}
+
+.rule-chunks:hover {
+  -webkit-line-clamp: unset;
+  overflow: auto;
+}
+
+.rule-chunks:hover::before {
+  display: none;
+}
+
+.rule-chunks:before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: linear-gradient(to top, white, transparent);
+}

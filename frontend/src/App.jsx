@@ -349,7 +349,7 @@ function App() {
 					const formData = new FormData();
 					formData.append("file", f.raw, f.name);
 					if (sid) formData.append("session_id", sid);
-					await fetch("/api/rules", { method: "POST", body: formData });
+					await fetch("/api/context/rules", { method: "POST", body: formData });
 				}
 			}
 			// Add pasted text (if any)
