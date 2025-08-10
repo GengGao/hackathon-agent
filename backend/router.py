@@ -48,7 +48,7 @@ router = APIRouter()
 # Initialise RAG with default rule file (user can replace via API call later)
 rag = RuleRAG(Path(__file__).parent / "docs" / "rules.txt", lazy=False)
 
-MAX_FILE_BYTES = 5 * 1024 * 1024  # 5MB limit per file
+MAX_FILE_BYTES = 10 * 1024 * 1024  # 10MB limit per file
 ALLOWED_FILE_EXT = {'.txt', '.md', '.pdf', '.docx', '.doc', '.png', '.jpg', '.jpeg'}
 
 
@@ -89,6 +89,32 @@ def extract_text_from_file(file: UploadFile) -> str:
             return raw.decode('utf-8', errors='ignore')
     except Exception as e:
         return f"[Failed to process {filename}: {e}]"
+
+
+def build_url_block(url: str, *, timeout: int = 5, max_bytes: int = 100_000) -> str:
+    """Fetch URL content similarly to chat_stream and wrap in [URL:...] tags.
+
+    Returns a block like:
+    [URL:https://example.com]
+    ...content...
+    [/URL]
+
+    Falls back to a failure block on error.
+    """
+    try:
+        resp = requests.get(url, timeout=timeout, stream=True)
+        ctype = resp.headers.get('Content-Type', '')
+        if 'text' not in ctype.lower():
+            snippet = f"[Blocked non-text content-type {ctype}]"
+        else:
+            content_bytes = resp.content[:max_bytes]
+            if len(resp.content) > max_bytes:
+                snippet = content_bytes.decode('utf-8', errors='ignore') + "\n[Truncated]"
+            else:
+                snippet = content_bytes.decode('utf-8', errors='ignore')
+        return f"[URL:{url}]\n{snippet}\n[/URL]"
+    except Exception as e:
+        return f"[URL_FETCH_FAILED:{url}]\nError: {e}"
 
 
 @router.post("/chat-stream")
@@ -348,8 +374,8 @@ def delete_todo_route(todo_id: int, session_id: Optional[str] = Query(None)):
 @router.post("/context/rules")
 def upload_rules(file: UploadFile = File(...), session_id: Optional[str] = Form(None)):
     """Replace the current rules file & store in DB as a new active context row."""
-    content_bytes = file.file.read()
-    content = content_bytes.decode('utf-8', errors='ignore')
+    # Reuse file extraction logic used by chat streaming for consistency
+    content = extract_text_from_file(file)
     if session_id:
         create_chat_session(session_id)
     add_rule_context('file', content, filename=file.filename, active=True, session_id=session_id)
@@ -369,27 +395,10 @@ def add_text_context(text: str = Form(...), session_id: Optional[str] = Form(Non
         return JSONResponse(status_code=400, content={"error": "Empty text"})
     # If it's a URL, fetch and store fetched snippet instead of raw URL only
     if cleaned.startswith(('http://', 'https://')):
-        try:
-            resp = requests.get(cleaned, timeout=8, stream=True)
-            ctype = resp.headers.get('Content-Type', '')
-            if 'text' not in ctype.lower():
-                snippet = f"[Blocked non-text content-type {ctype}]"
-            else:
-                content_bytes = resp.content[:100_000]
-                if len(resp.content) > 100_000:
-                    snippet = content_bytes.decode('utf-8', errors='ignore') + "\n[Truncated]"
-                else:
-                    snippet = content_bytes.decode('utf-8', errors='ignore')
-            block = f"[URL:{cleaned}]\n{snippet}"
-            if session_id:
-                create_chat_session(session_id)
-            add_rule_context('url', block, filename=cleaned, session_id=session_id)
-        except Exception as e:
-            # Store URL with failure note to keep traceability
-            block = f"[URL_FETCH_FAILED:{cleaned}]\nError: {e}"
-            if session_id:
-                create_chat_session(session_id)
-            add_rule_context('url', block, filename=cleaned, session_id=session_id)
+        block = build_url_block(cleaned)
+        if session_id:
+            create_chat_session(session_id)
+        add_rule_context('url', block, filename=cleaned, session_id=session_id)
     else:
         if session_id:
             create_chat_session(session_id)

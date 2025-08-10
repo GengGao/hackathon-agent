@@ -508,7 +508,16 @@ def summarize_chat_history(session_id: str) -> Dict[str, Any]:
             if msg["role"] == "user":
                 content = msg["content"][:150] + "..." if len(msg["content"]) > 150 else msg["content"]
                 summary_parts.append(f"  - Recent: {content}")
-    submission_summary = llm_summary or "\n\n".join(summary_parts)
+    # Ensure a consistent header is present even when LLM returns text
+    if llm_summary:
+        # If LLM response lacks the expected header, prefix minimal header + stats
+        if "## Hackathon Project Summary" not in llm_summary:
+            minimal_prefix = "\n\n".join(summary_parts[:2])  # Header + Total Messages line
+            submission_summary = f"{minimal_prefix}\n\n{llm_summary}".strip()
+        else:
+            submission_summary = llm_summary
+    else:
+        submission_summary = "\n\n".join(summary_parts)
 
     # Save the summary
     metadata = {
