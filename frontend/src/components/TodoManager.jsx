@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export default function TodoManager() {
+export default function TodoManager({ currentSessionId }) {
 	const [todos, setTodos] = useState([]);
 	const [newItem, setNewItem] = useState("");
 	const [loading, setLoading] = useState(false);
@@ -11,7 +11,11 @@ export default function TodoManager() {
 		setLoading(true);
 		setError(null);
 		try {
-			const res = await fetch("/api/todos?detailed=true");
+			const url = new URL(`${window.location.origin}/api/todos`);
+			url.searchParams.set("detailed", "true");
+			if (currentSessionId)
+				url.searchParams.set("session_id", currentSessionId);
+			const res = await fetch(url.toString());
 			if (!res.ok) throw new Error(res.statusText);
 			const data = await res.json();
 			setTodos(data.todos || []);
@@ -25,13 +29,15 @@ export default function TodoManager() {
 	// biome-ignore lint/correctness/useExhaustiveDependencies: <explanation>
 	useEffect(() => {
 		fetchTodos();
-	}, []);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [currentSessionId]);
 
 	const addTodo = async (e) => {
 		e.preventDefault();
 		if (!newItem.trim()) return;
 		const form = new FormData();
 		form.append("item", newItem.trim());
+		if (currentSessionId) form.append("session_id", currentSessionId);
 		await fetch("/api/todos", { method: "POST", body: form });
 		setNewItem("");
 		fetchTodos();
@@ -42,18 +48,32 @@ export default function TodoManager() {
 		for (const [k, v] of Object.entries(fields)) {
 			if (v !== undefined && v !== null) form.append(k, v);
 		}
+		if (currentSessionId) form.append("session_id", currentSessionId);
 		await fetch(`/api/todos/${id}`, { method: "PUT", body: form });
 		fetchTodos();
 	};
 
 	const deleteTodo = async (id) => {
-		await fetch(`/api/todos/${id}`, { method: "DELETE" });
+		const url = new URL(`${window.location.origin}/api/todos/${id}`);
+		if (currentSessionId) url.searchParams.set("session_id", currentSessionId);
+		await fetch(url.toString(), { method: "DELETE" });
 		fetchTodos();
 	};
 
 	const clearAll = async () => {
-		if (!window.confirm("Clear all todos?")) return;
-		await fetch("/api/todos", { method: "DELETE" });
+		if (!window.confirm("Clear all todos for this chat session?")) return;
+		if (!currentSessionId) {
+			alert("Please open or start a chat session first");
+			return;
+		}
+		const url = new URL(`${window.location.origin}/api/todos`);
+		url.searchParams.set("session_id", currentSessionId);
+		const res = await fetch(url.toString(), { method: "DELETE" });
+		if (!res.ok) {
+			const data = await res.json().catch(() => ({}));
+			alert(data.error || "Failed to clear todos");
+			return;
+		}
 		fetchTodos();
 	};
 

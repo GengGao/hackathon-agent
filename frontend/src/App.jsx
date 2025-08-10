@@ -386,8 +386,10 @@ function App() {
 
 	const updateDashboard = async () => {
 		try {
-			// Get todos
-			const todosRes = await fetch("/api/todos");
+			// Get todos (session-scoped)
+			const todosRes = await fetch(
+				`/api/todos${currentSessionId ? `?session_id=${encodeURIComponent(currentSessionId)}` : ""}`,
+			);
 			const todosData = todosRes.ok ? await todosRes.json() : { todos: [] };
 
 			// Get project artifacts if we have a session
@@ -851,7 +853,7 @@ function App() {
 									<i className="fas fa-tasks mr-2 text-green-500" />
 									To-Do List
 								</h3>
-								<TodoManager />
+								<TodoManager currentSessionId={currentSessionId} />
 							</div>
 							<div className="glass-effect-readable p-3 rounded-lg border border-white/10">
 								<div className="flex items-center justify-between mb-2">

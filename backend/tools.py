@@ -28,8 +28,8 @@ def _write_json_file(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def list_todos(detailed: bool = False) -> List[Any]:
-    rows = list_todos_db()
+def list_todos(detailed: bool = False, session_id: str | None = None) -> List[Any]:
+    rows = list_todos_db(session_id=session_id)
     if detailed:
         # Return dicts with extended fields if present
         out = []
@@ -40,20 +40,25 @@ def list_todos(detailed: bool = False) -> List[Any]:
             for k in ("status", "sort_order", "created_at", "updated_at", "completed_at"):
                 if k in existing_keys:
                     d[k] = r[k]
+            if "session_id" in existing_keys:
+                d["session_id"] = r["session_id"]
             out.append(d)
         return out
     return [str(r["item"]) for r in rows]
 
 
-def add_todo(item: str) -> Dict[str, Any]:
-    add_todo_db(item)
-    todos = list_todos()
+def add_todo(item: str, session_id: str | None = None) -> Dict[str, Any]:
+    add_todo_db(item, session_id=session_id)
+    todos = list_todos(session_id=session_id)
     return {"ok": True, "count": len(todos)}
 
 
-def clear_todos() -> Dict[str, Any]:
-    clear_todos_db()
-    return {"ok": True}
+def clear_todos(session_id: str | None = None) -> Dict[str, Any]:
+    # Only clear when a session_id is explicitly provided (tool-call scoping)
+    if not session_id:
+        return {"ok": True, "deleted": 0}
+    deleted = clear_todos_db(session_id=session_id)
+    return {"ok": True, "deleted": deleted}
 
 
 def update_todo(todo_id: int, **fields) -> Dict[str, Any]:
@@ -61,8 +66,8 @@ def update_todo(todo_id: int, **fields) -> Dict[str, Any]:
     return {"ok": ok}
 
 
-def delete_todo(todo_id: int) -> Dict[str, Any]:
-    ok = delete_todo_db(todo_id)
+def delete_todo(todo_id: int, session_id: str | None = None) -> Dict[str, Any]:
+    ok = delete_todo_db(todo_id, session_id=session_id)
     return {"ok": ok}
 
 
@@ -285,7 +290,7 @@ def summarize_chat_history(session_id: str) -> Dict[str, Any]:
 
     # Get current todos
     from models.db import list_todos_db
-    todos = list_todos_db()
+    todos = list_todos_db(session_id=session_id)
     current_todos = [todo["item"] for todo in todos] if todos else []
 
     # Build summary
@@ -362,7 +367,11 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
             "function": {
                 "name": "list_todos",
                 "description": "List the current to-do items maintained by the agent.",
-                "parameters": {"type": "object", "properties": {}, "required": []},
+                "parameters": {
+                    "type": "object",
+                    "properties": {"session_id": {"type": "string"}},
+                    "required": ["session_id"]
+                },
             },
         },
         {
@@ -372,8 +381,8 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
                 "description": "Add a new item to the agent to-do list.",
                 "parameters": {
                     "type": "object",
-                    "properties": {"item": {"type": "string"}},
-                    "required": ["item"],
+                    "properties": {"item": {"type": "string"}, "session_id": {"type": "string"}},
+                    "required": ["item", "session_id"],
                 },
             },
         },
@@ -381,8 +390,12 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
             "type": "function",
             "function": {
                 "name": "clear_todos",
-                "description": "Clear all items from the agent to-do list.",
-                "parameters": {"type": "object", "properties": {}, "required": []},
+                "description": "Clear all items from the current chat session to-do list.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"session_id": {"type": "string"}},
+                    "required": ["session_id"]
+                },
             },
         },
         {
@@ -437,9 +450,9 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
 
 
 FUNCTION_DISPATCH = {
-    "list_todos": lambda **kwargs: list_todos(),
-    "add_todo": lambda **kwargs: add_todo(kwargs.get("item", "")),
-    "clear_todos": lambda **kwargs: clear_todos(),
+    "list_todos": lambda **kwargs: list_todos(session_id=kwargs.get("session_id")),
+    "add_todo": lambda **kwargs: add_todo(kwargs.get("item", ""), session_id=kwargs.get("session_id")),
+    "clear_todos": lambda **kwargs: clear_todos(session_id=kwargs.get("session_id")),
     "list_directory": lambda **kwargs: list_directory(kwargs.get("path", ".")),
     "derive_project_idea": lambda **kwargs: derive_project_idea(kwargs.get("session_id", "")),
     "create_tech_stack": lambda **kwargs: create_tech_stack(kwargs.get("session_id", "")),

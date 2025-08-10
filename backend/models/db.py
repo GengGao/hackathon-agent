@@ -174,41 +174,75 @@ def list_project_files(project_id: int) -> list[sqlite3.Row]:
         return list(cur.fetchall())
 
 
-def list_todos_db() -> list[sqlite3.Row]:
+def list_todos_db(session_id: Optional[str] = None) -> list[sqlite3.Row]:
     with get_connection() as conn:
         # Prefer ordering by status (pending first), sort_order then id if columns exist
         try:
-            cur = conn.execute(
-                "SELECT * FROM todos ORDER BY "
-                "CASE WHEN status='pending' THEN 0 WHEN status='in_progress' THEN 1 ELSE 2 END, "
-                "sort_order ASC, id ASC"
-            )
+            if session_id is None:
+                cur = conn.execute(
+                    "SELECT * FROM todos WHERE (session_id IS NULL OR session_id = '') ORDER BY "
+                    "CASE WHEN status='pending' THEN 0 WHEN status='in_progress' THEN 1 ELSE 2 END, "
+                    "sort_order ASC, id ASC"
+                )
+            else:
+                cur = conn.execute(
+                    "SELECT * FROM todos WHERE session_id = ? ORDER BY "
+                    "CASE WHEN status='pending' THEN 0 WHEN status='in_progress' THEN 1 ELSE 2 END, "
+                    "sort_order ASC, id ASC",
+                    (session_id,)
+                )
         except Exception:
-            # Legacy schema fallback
-            cur = conn.execute("SELECT * FROM todos ORDER BY id ASC")
+            # Legacy schema fallback (no status/sort columns or session_id column)
+            if session_id is None:
+                cur = conn.execute("SELECT * FROM todos ORDER BY id ASC")
+            else:
+                # If session_id column doesn't exist, there can't be scoped rows; return empty
+                try:
+                    cur = conn.execute("SELECT * FROM todos WHERE session_id = ? ORDER BY id ASC", (session_id,))
+                except Exception:
+                    return []
         return list(cur.fetchall())
 
 
-def add_todo_db(item: str) -> int:
+def add_todo_db(item: str, session_id: Optional[str] = None) -> int:
     with get_connection() as conn:
         # Attempt extended insert if columns exist
         try:
             cur = conn.execute(
-                "INSERT INTO todos(item, status, sort_order) VALUES(?, 'pending', 0)",
-                (item,)
+                "INSERT INTO todos(item, status, sort_order, session_id) VALUES(?, 'pending', 0, ?)",
+                (item, session_id)
             )
         except Exception:
-            cur = conn.execute("INSERT INTO todos(item) VALUES(?)", (item,))
+            # Fallback to legacy schemas
+            try:
+                cur = conn.execute("INSERT INTO todos(item, status, sort_order) VALUES(?, 'pending', 0)", (item,))
+            except Exception:
+                cur = conn.execute("INSERT INTO todos(item) VALUES(?)", (item,))
         return int(cur.lastrowid)
 
 
-def clear_todos_db() -> None:
+def clear_todos_db(session_id: Optional[str] = None) -> int:
+    """Delete todos.
+
+    - When session_id is provided, delete only that session's todos.
+    - When session_id is None, delete all todos (back-compat for tests and maintenance utilities).
+    Returns number of rows deleted.
+    """
     with get_connection() as conn:
-        conn.execute("DELETE FROM todos")
+        try:
+            if session_id:
+                cur = conn.execute("DELETE FROM todos WHERE session_id = ?", (session_id,))
+            else:
+                cur = conn.execute("DELETE FROM todos")
+            return cur.rowcount or 0
+        except Exception:
+            # Legacy schema fallback (no session_id column)
+            cur = conn.execute("DELETE FROM todos")
+            return cur.rowcount or 0
 
 
 def update_todo_db(todo_id: int, item: Optional[str] = None, status: Optional[str] = None,
-                   sort_order: Optional[int] = None) -> bool:
+                   sort_order: Optional[int] = None, session_id: Optional[str] = None) -> bool:
     """Update fields on a todo. Returns True if a row was modified."""
     fields = []
     params: list[Any] = []  # type: ignore
@@ -227,8 +261,12 @@ def update_todo_db(todo_id: int, item: Optional[str] = None, status: Optional[st
         params.append(sort_order)
     if not fields:
         return False
-    sql = "UPDATE todos SET " + ", ".join(fields) + ", updated_at = datetime('now') WHERE id = ?"
+    where_clause = "id = ?"
     params.append(todo_id)
+    if session_id is not None:
+        where_clause += " AND session_id = ?"
+        params.append(session_id)
+    sql = "UPDATE todos SET " + ", ".join(fields) + ", updated_at = datetime('now') WHERE " + where_clause
     with get_connection() as conn:
         try:
             cur = conn.execute(sql, params)
@@ -237,7 +275,10 @@ def update_todo_db(todo_id: int, item: Optional[str] = None, status: Optional[st
             # If no rows were reported as changed, it might be a no-op (values identical).
             # Consider this a success if the todo exists.
             try:
-                chk = conn.execute("SELECT 1 FROM todos WHERE id = ?", (todo_id,)).fetchone()
+                if session_id is not None:
+                    chk = conn.execute("SELECT 1 FROM todos WHERE id = ? AND session_id = ?", (todo_id, session_id)).fetchone()
+                else:
+                    chk = conn.execute("SELECT 1 FROM todos WHERE id = ?", (todo_id,)).fetchone()
                 return chk is not None
             except Exception:
                 return False
@@ -255,10 +296,17 @@ def update_todo_db(todo_id: int, item: Optional[str] = None, status: Optional[st
             return False
 
 
-def delete_todo_db(todo_id: int) -> bool:
+def delete_todo_db(todo_id: int, session_id: Optional[str] = None) -> bool:
     with get_connection() as conn:
-        cur = conn.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
-        return cur.rowcount > 0
+        try:
+            if session_id is not None:
+                cur = conn.execute("DELETE FROM todos WHERE id = ? AND session_id = ?", (todo_id, session_id))
+            else:
+                cur = conn.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
+            return cur.rowcount > 0
+        except Exception:
+            cur = conn.execute("DELETE FROM todos WHERE id = ?", (todo_id,))
+            return cur.rowcount > 0
 
 
 # --- Chat history CRUD operations ---

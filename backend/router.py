@@ -173,6 +173,9 @@ async def chat_stream(
     - Use clear_todos to reset the task list when asked.
     - Use list_directory to explore local files when requested.
 
+    Important runtime rule for tools:
+    - The current chat session id (session_id) is automatically provided by the system at execution time. Never ask the user for the session id. You may omit it in your arguments; the runtime will inject the correct value. If you include it, the system value will override it.
+
     Rules context (authoritative):
     {rule_text}
 
@@ -221,7 +224,10 @@ async def chat_stream(
                 user_content,
                 system=system_prompt + "\n\n" + rule_text,
                 tools=tools,
-                execute_tool=lambda fn, args: call_tool(fn, args),
+                execute_tool=lambda fn, args: call_tool(
+                    fn,
+                    {**(args or {}), **({"session_id": session_id} if session_id else {})}
+                ),
             ):
                 if isinstance(data, dict):
                     if data.get("type") == "thinking":
@@ -283,20 +289,22 @@ async def chat_stream(
 
 
 @router.get("/todos")
-def get_todos(detailed: bool = Query(False)):
-    return {"todos": list_todos(detailed=detailed)}
+def get_todos(detailed: bool = Query(False), session_id: Optional[str] = Query(None)):
+    return {"todos": list_todos(detailed=detailed, session_id=session_id)}
 
 
 @router.post("/todos")
-def post_todo(item: str = Form(...)):
-    res = add_todo(item)
-    return {"ok": res.get("ok", True), "todos": list_todos()}
+def post_todo(item: str = Form(...), session_id: Optional[str] = Form(None)):
+    res = add_todo(item, session_id=session_id)
+    return {"ok": res.get("ok", True), "todos": list_todos(session_id=session_id)}
 
 
 @router.delete("/todos")
-def delete_todos():
-    res = clear_todos()
-    return {"ok": res.get("ok", True)}
+def delete_todos(session_id: Optional[str] = Query(None)):
+    if not session_id:
+        return JSONResponse(status_code=400, content={"error": "session_id is required"})
+    res = clear_todos(session_id=session_id)
+    return {"ok": res.get("ok", True), "deleted": res.get("deleted", 0)}
 
 
 @router.put("/todos/{todo_id}")
@@ -304,7 +312,8 @@ async def update_todo_route(todo_id: int,
                             request: Request,
                             item: Optional[str] = Form(None),
                             status: Optional[str] = Form(None),
-                            sort_order: Optional[int] = Form(None)):
+                            sort_order: Optional[int] = Form(None),
+                            session_id: Optional[str] = Form(None)):
     # Accept either form-encoded fields or JSON body
     fields: Dict[str, Any] = {}
     if item is not None:
@@ -314,12 +323,15 @@ async def update_todo_route(todo_id: int,
     if sort_order is not None:
         fields["sort_order"] = sort_order
 
+    if session_id is not None:
+        fields["session_id"] = session_id
+
     if not fields:
         try:
             if request.headers.get("content-type", "").startswith("application/json"):
                 payload = await request.json()
                 if isinstance(payload, dict):
-                    for k in ("item", "status", "sort_order"):
+                    for k in ("item", "status", "sort_order", "session_id"):
                         if k in payload and payload[k] is not None:
                             fields[k] = payload[k]
         except Exception:
@@ -336,8 +348,8 @@ async def update_todo_route(todo_id: int,
 
 
 @router.delete("/todos/{todo_id}")
-def delete_todo_route(todo_id: int):
-    res = delete_todo(todo_id)
+def delete_todo_route(todo_id: int, session_id: Optional[str] = Query(None)):
+    res = delete_todo(todo_id, session_id=session_id)
     if not res.get("ok"):
         return JSONResponse(status_code=404, content={"error": "Todo not found"})
     return {"ok": True}
