@@ -33,6 +33,8 @@ function App() {
 	const [showModelPicker, setShowModelPicker] = useState(false);
 	const [todosRefreshKey, setTodosRefreshKey] = useState(0);
 	const ragStatusPollRef = useRef(null);
+	const contextScrollRef = useRef(null);
+	const previousFilesCountRef = useRef(0);
 
 	// Streaming state for artifact generators
 	const [isStreamingIdea, setIsStreamingIdea] = useState(false);
@@ -228,6 +230,18 @@ function App() {
 		if (!currentSessionId) return;
 		refreshDashboard();
 	}, [currentSessionId, refreshDashboard]);
+
+	useEffect(() => {
+		const added = uploadedFiles.length > previousFilesCountRef.current;
+		previousFilesCountRef.current = uploadedFiles.length;
+		if (!added || uploadedFiles.length === 0) return;
+		requestAnimationFrame(() => {
+			if (contextScrollRef.current) {
+				contextScrollRef.current.scrollTop =
+					contextScrollRef.current.scrollHeight;
+			}
+		});
+	}, [uploadedFiles]);
 
 	// Close model picker when clicking outside
 	useEffect(() => {
@@ -896,7 +910,10 @@ function App() {
 							</div>
 						</div>
 						{/* Scrollable content */}
-						<div className="flex-1 min-h-0 overflow-y-auto p-3">
+						<div
+							ref={contextScrollRef}
+							className="flex-1 min-h-0 overflow-y-auto p-3"
+						>
 							<p className="text-sm text-readable-light mb-4">
 								Paste rules, URLs, or drag & drop files to give the agent
 								context.
