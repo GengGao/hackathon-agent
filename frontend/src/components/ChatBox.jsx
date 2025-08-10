@@ -20,8 +20,11 @@ export default function ChatBox({
 	}, []);
 
 	useEffect(() => {
-		scrollToBottom();
-	}, [scrollToBottom]);
+		const lastMessage = messages[messages.length - 1];
+		if (lastMessage) {
+			scrollToBottom();
+		}
+	}, [messages, scrollToBottom]);
 
 	const handleSubmit = (e) => {
 		e.preventDefault();
