@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ChatBox from "./components/ChatBox";
 import ChatHistory from "./components/ChatHistory";
 import FileDrop from "./components/FileDrop";
@@ -32,6 +32,7 @@ function App() {
 	});
 	const [showModelPicker, setShowModelPicker] = useState(false);
 	const [todosRefreshKey, setTodosRefreshKey] = useState(0);
+	const ragStatusPollRef = useRef(null);
 
 	// Streaming state for artifact generators
 	const [isStreamingIdea, setIsStreamingIdea] = useState(false);
@@ -119,6 +120,10 @@ function App() {
 				);
 				if (!res.ok) throw new Error(res.statusText);
 				const data = await res.json();
+				// Only accept status for the session we requested to avoid cross-session races
+				const statusSession =
+					typeof data.session_id === "string" ? data.session_id : sid;
+				if (sid && statusSession && statusSession !== sid) return;
 				setRagStatus(data);
 			} catch (error) {
 				console.error("Failed to check RAG status:", error);
@@ -196,6 +201,27 @@ function App() {
 		if (!currentSessionId) return;
 		checkRagStatus(currentSessionId);
 	}, [currentSessionId, checkRagStatus]);
+
+	// While not ready (or building), poll status for the active session so UI reflects correct session readiness
+	useEffect(() => {
+		if (!currentSessionId) return;
+		const shouldPoll = !ragStatus.ready || ragStatus.building;
+		if (shouldPoll) {
+			if (ragStatusPollRef.current) clearInterval(ragStatusPollRef.current);
+			ragStatusPollRef.current = setInterval(() => {
+				checkRagStatus(currentSessionId);
+			}, 1500);
+		} else if (ragStatusPollRef.current) {
+			clearInterval(ragStatusPollRef.current);
+			ragStatusPollRef.current = null;
+		}
+		return () => {
+			if (ragStatusPollRef.current) {
+				clearInterval(ragStatusPollRef.current);
+				ragStatusPollRef.current = null;
+			}
+		};
+	}, [ragStatus.ready, ragStatus.building, currentSessionId, checkRagStatus]);
 
 	// Auto-refresh dashboard on page load and when session changes
 	useEffect(() => {
@@ -832,6 +858,7 @@ function App() {
 								<i className="fas fa-layer-group mr-2 text-blue-500" />
 								Hackathon Context
 							</h2>
+							{/* Context status indicator */}
 							<div
 								className="text-xs font-medium flex items-center gap-2"
 								aria-live="polite"
@@ -840,7 +867,13 @@ function App() {
 								{ragStatus.building ? (
 									<>
 										<i className="fas fa-spinner fa-spin text-blue-500" />
-										<span className="text-blue-600">Indexing...</span>
+										<span className="text-blue-600">
+											Indexing
+											{currentSessionId
+												? ` (session ${currentSessionId.slice(0, 8)}…)`
+												: ""}
+											...
+										</span>
 									</>
 								) : ragStatus.ready ? (
 									<>
@@ -852,7 +885,12 @@ function App() {
 								) : (
 									<>
 										<i className="fas fa-exclamation-circle text-gray-400" />
-										<span className="text-gray-600">No context indexed</span>
+										<span className="text-gray-600">
+											No context indexed
+											{currentSessionId
+												? ` for session ${currentSessionId.slice(0, 8)}…`
+												: ""}
+										</span>
 									</>
 								)}
 							</div>

@@ -405,24 +405,20 @@ def add_text_context(text: str = Form(...), session_id: Optional[str] = Form(Non
 
 @router.get("/context/status")
 def get_context_status(session_id: Optional[str] = Query(None)):
-    """Expose current RAG indexing status for the UI."""
+    """Expose current RAG indexing status for the UI, scoped to the provided session."""
     try:
-        try:
-            rag.set_session(session_id)
-        except Exception:
-            pass
-        status = rag.status()
+        status = rag.status_scoped(session_id)
         # If index not ready and not currently building, trigger background build
         if not status.get("ready") and not status.get("building"):
             try:
                 threading.Thread(target=rag.rebuild, kwargs={"force": True}, daemon=True).start()
-                # Update local status to reflect build kickoff
-                status = rag.status()
+                # Reflect build kickoff without re-reading potentially cross-session state
+                status = {**status, "building": True}
             except Exception:
                 pass
         return status
     except Exception as e:
-        return {"ready": False, "building": False, "chunks": 0, "error": str(e)}
+        return {"ready": False, "building": False, "chunks": 0, "session_id": session_id, "error": str(e)}
 
 
 @router.get("/context/list")

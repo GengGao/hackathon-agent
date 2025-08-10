@@ -278,3 +278,10 @@ class RuleRAG:
                 "rules_hash": self._last_rules_hash,
                 "session_id": self._session_id,
             }
+
+    def status_scoped(self, session_id: Optional[str]) -> Dict[str, Any]:
+        """Atomically set session and return status to avoid cross-request races."""
+        # RLock allows re-entrant acquisition within set_session and status
+        with self._lock:
+            self.set_session(session_id)
+            return self.status()
