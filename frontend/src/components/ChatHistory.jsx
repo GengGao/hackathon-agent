@@ -17,7 +17,12 @@ export default function ChatHistory({
 			const res = await fetch("/api/chat-sessions");
 			if (!res.ok) throw new Error(res.statusText);
 			const data = await res.json();
-			setSessions(data.sessions || []);
+			const items = (data.sessions || []).slice().sort((a, b) => {
+				const ad = new Date(a.updated_at || a.created_at || 0).getTime();
+				const bd = new Date(b.updated_at || b.created_at || 0).getTime();
+				return bd - ad; // newest first
+			});
+			setSessions(items);
 		} catch (error) {
 			console.error("Failed to load chat sessions:", error);
 		} finally {

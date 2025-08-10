@@ -319,7 +319,14 @@ def create_chat_session(session_id: str, title: Optional[str] = None) -> int:
             (session_id, title)
         )
         if cur.rowcount == 0:
-            # Session already exists, get its ID
+            # Session already exists, touch updated_at and return its ID
+            try:
+                conn.execute(
+                    "UPDATE chat_sessions SET updated_at = datetime('now') WHERE session_id = ?",
+                    (session_id,)
+                )
+            except Exception:
+                pass
             cur = conn.execute("SELECT id FROM chat_sessions WHERE session_id = ?", (session_id,))
             row = cur.fetchone()
             return int(row["id"]) if row else 0
@@ -357,7 +364,17 @@ def add_chat_message(
             "INSERT INTO chat_messages(session_id, role, content, metadata) VALUES(?, ?, ?, ?)",
             (session_id, role, content, metadata_json)
         )
-        return int(cur.lastrowid)
+        message_id = int(cur.lastrowid)
+        # Touch the parent session so it bubbles to the top when listing recent sessions
+        try:
+            conn.execute(
+                "UPDATE chat_sessions SET updated_at = datetime('now') WHERE session_id = ?",
+                (session_id,)
+            )
+        except Exception:
+            # Ignore if the chat_sessions table or column is missing in legacy DBs
+            pass
+        return message_id
 
 
 def get_chat_messages(session_id: str, limit: Optional[int] = None) -> list[sqlite3.Row]:
