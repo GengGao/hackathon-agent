@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ChatBox from "./components/ChatBox";
 import ChatHistory from "./components/ChatHistory";
 import FileDrop from "./components/FileDrop";
@@ -31,6 +31,35 @@ function App() {
 		available_models: [],
 	});
 	const [showModelPicker, setShowModelPicker] = useState(false);
+
+	// Streaming state for artifact generators
+	const [isStreamingIdea, setIsStreamingIdea] = useState(false);
+	const [isStreamingStack, setIsStreamingStack] = useState(false);
+	const [isStreamingSummary, setIsStreamingSummary] = useState(false);
+
+	// Simple skeleton text block used while streaming
+	const SkeletonText = ({ lines = 3 }) => {
+		const widths = ["w-5/6", "w-4/6", "w-3/6", "w-2/3", "w-1/2"];
+		const [skeletonId] = useState(() => Math.random().toString(36).slice(2));
+		const keys = useMemo(
+			() =>
+				Array.from({ length: lines }).map(
+					() => `${skeletonId}-${Math.random().toString(36).slice(2)}`,
+				),
+			[lines, skeletonId],
+		);
+		return (
+			<ul className="skeleton-text animate-pulse space-y-2" aria-live="polite">
+				{keys.map((key, i) => (
+					<li
+						key={key}
+						className={`h-3 rounded ${widths[i % widths.length]}`}
+					/>
+				))}
+			</ul>
+		);
+	};
+	// streaming flags removed (not used directly in UI)
 
 	const generateSessionId = useCallback(
 		() =>
@@ -442,22 +471,57 @@ function App() {
 			return;
 		}
 
+		const controller = new AbortController();
+		setIsStreamingIdea(true);
 		try {
-			const response = await fetch(
-				`/api/chat-sessions/${currentSessionId}/derive-project-idea`,
-				{ method: "POST" },
+			setDashboardData((prev) => ({ ...prev, idea: "" }));
+			const res = await fetch(
+				`/api/chat-sessions/${currentSessionId}/derive-project-idea?stream=true`,
+				{
+					method: "POST",
+					signal: controller.signal,
+					headers: { Accept: "text/event-stream" },
+				},
 			);
-			const data = await response.json();
-			if (data.ok) {
-				updateDashboard(); // Refresh dashboard with new data
-			} else {
-				alert(
-					`Failed to generate project idea: ${data.error || "Unknown error"}`,
-				);
+			if (!res.ok) throw new Error(res.statusText);
+			const reader = res.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = "";
+			let content = "";
+			let ended = false;
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done || ended) break;
+				buffer += decoder.decode(value, { stream: true });
+				let idx = buffer.indexOf("\n\n");
+				while (idx !== -1) {
+					const block = buffer.slice(0, idx);
+					buffer = buffer.slice(idx + 2);
+					const lines = block.split("\n").filter((l) => l.startsWith("data:"));
+					if (lines.length) {
+						try {
+							const payload = JSON.parse(
+								lines.map((l) => l.replace(/^data:\s?/, "")).join("\n"),
+							);
+							if (payload.type === "token") {
+								content += payload.token || "";
+								setDashboardData((prev) => ({ ...prev, idea: content }));
+							} else if (payload.type === "end") {
+								ended = true;
+							}
+						} catch {
+							// ignore malformed lines
+						}
+					}
+					idx = buffer.indexOf("\n\n");
+				}
 			}
+			updateDashboard();
 		} catch (error) {
 			console.error("Error generating project idea:", error);
 			alert("Failed to generate project idea");
+		} finally {
+			setIsStreamingIdea(false);
 		}
 	};
 
@@ -467,22 +531,57 @@ function App() {
 			return;
 		}
 
+		const controller = new AbortController();
+		setIsStreamingStack(true);
 		try {
-			const response = await fetch(
-				`/api/chat-sessions/${currentSessionId}/create-tech-stack`,
-				{ method: "POST" },
+			setDashboardData((prev) => ({ ...prev, stack: "" }));
+			const res = await fetch(
+				`/api/chat-sessions/${currentSessionId}/create-tech-stack?stream=true`,
+				{
+					method: "POST",
+					signal: controller.signal,
+					headers: { Accept: "text/event-stream" },
+				},
 			);
-			const data = await response.json();
-			if (data.ok) {
-				updateDashboard(); // Refresh dashboard with new data
-			} else {
-				alert(
-					`Failed to generate tech stack: ${data.error || "Unknown error"}`,
-				);
+			if (!res.ok) throw new Error(res.statusText);
+			const reader = res.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = "";
+			let content = "";
+			let ended = false;
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done || ended) break;
+				buffer += decoder.decode(value, { stream: true });
+				let idx = buffer.indexOf("\n\n");
+				while (idx !== -1) {
+					const block = buffer.slice(0, idx);
+					buffer = buffer.slice(idx + 2);
+					const lines = block.split("\n").filter((l) => l.startsWith("data:"));
+					if (lines.length) {
+						try {
+							const payload = JSON.parse(
+								lines.map((l) => l.replace(/^data:\s?/, "")).join("\n"),
+							);
+							if (payload.type === "token") {
+								content += payload.token || "";
+								setDashboardData((prev) => ({ ...prev, stack: content }));
+							} else if (payload.type === "end") {
+								ended = true;
+							}
+						} catch {
+							// ignore malformed lines
+						}
+					}
+					idx = buffer.indexOf("\n\n");
+				}
 			}
+			updateDashboard();
 		} catch (error) {
 			console.error("Error generating tech stack:", error);
 			alert("Failed to generate tech stack");
+		} finally {
+			setIsStreamingStack(false);
 		}
 	};
 
@@ -492,22 +591,57 @@ function App() {
 			return;
 		}
 
+		const controller = new AbortController();
+		setIsStreamingSummary(true);
 		try {
-			const response = await fetch(
-				`/api/chat-sessions/${currentSessionId}/summarize-chat-history`,
-				{ method: "POST" },
+			setDashboardData((prev) => ({ ...prev, submission: "" }));
+			const res = await fetch(
+				`/api/chat-sessions/${currentSessionId}/summarize-chat-history?stream=true`,
+				{
+					method: "POST",
+					signal: controller.signal,
+					headers: { Accept: "text/event-stream" },
+				},
 			);
-			const data = await response.json();
-			if (data.ok) {
-				updateDashboard(); // Refresh dashboard with new data
-			} else {
-				alert(
-					`Failed to generate submission notes: ${data.error || "Unknown error"}`,
-				);
+			if (!res.ok) throw new Error(res.statusText);
+			const reader = res.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = "";
+			let content = "";
+			let ended = false;
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done || ended) break;
+				buffer += decoder.decode(value, { stream: true });
+				let idx = buffer.indexOf("\n\n");
+				while (idx !== -1) {
+					const block = buffer.slice(0, idx);
+					buffer = buffer.slice(idx + 2);
+					const lines = block.split("\n").filter((l) => l.startsWith("data:"));
+					if (lines.length) {
+						try {
+							const payload = JSON.parse(
+								lines.map((l) => l.replace(/^data:\s?/, "")).join("\n"),
+							);
+							if (payload.type === "token") {
+								content += payload.token || "";
+								setDashboardData((prev) => ({ ...prev, submission: content }));
+							} else if (payload.type === "end") {
+								ended = true;
+							}
+						} catch {
+							// ignore malformed lines
+						}
+					}
+					idx = buffer.indexOf("\n\n");
+				}
 			}
+			updateDashboard();
 		} catch (error) {
 			console.error("Error generating submission notes:", error);
 			alert("Failed to generate submission notes");
+		} finally {
+			setIsStreamingSummary(false);
 		}
 	};
 
@@ -825,7 +959,11 @@ function App() {
 									</button>
 								</div>
 								<p className="text-readable-light italic">
-									{dashboardData.idea}
+									{isStreamingIdea && !dashboardData.idea ? (
+										<SkeletonText lines={4} />
+									) : (
+										dashboardData.idea
+									)}
 								</p>
 							</div>
 							<div className="glass-effect-readable p-3 rounded-lg border border-white/10">
@@ -845,7 +983,11 @@ function App() {
 									</button>
 								</div>
 								<p className="text-readable-light italic">
-									{dashboardData.stack}
+									{isStreamingStack && !dashboardData.stack ? (
+										<SkeletonText lines={4} />
+									) : (
+										dashboardData.stack
+									)}
 								</p>
 							</div>
 							<div className="glass-effect-readable p-3 rounded-lg border border-white/10">
@@ -872,7 +1014,11 @@ function App() {
 									</button>
 								</div>
 								<p className="text-readable-light italic">
-									{dashboardData.submission}
+									{isStreamingSummary && !dashboardData.submission ? (
+										<SkeletonText lines={6} />
+									) : (
+										dashboardData.submission
+									)}
 								</p>
 							</div>
 						</div>

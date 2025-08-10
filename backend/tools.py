@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, AsyncGenerator, Optional, Callable
+import asyncio
 import json
 import os
 from models.db import (
     list_todos_db, add_todo_db, clear_todos_db, update_todo_db, delete_todo_db,
     get_chat_messages, save_project_artifact, get_project_artifact,
     get_all_project_artifacts
+)
+from llm import client as llm_client, get_current_model
+from prompts import (
+    TECH_STACK_SYSTEM_PROMPT,
+    PROJECT_IDEA_SYSTEM_PROMPT,
+    SUBMISSION_SUMMARY_SYSTEM_PROMPT,
 )
 
 
@@ -26,6 +33,125 @@ def _read_json_file(path: Path, default: Any) -> Any:
 
 def _write_json_file(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _shorten(text: str, limit: int = 220) -> str:
+    return (text[: limit - 3] + "...") if len(text) > limit else text
+
+
+def _build_conversation_snippets(messages: List[Dict[str, Any]], max_messages: int = 20) -> List[str]:
+    def _get_message_field(msg: Any, key: str, default: str = "") -> str:
+        if isinstance(msg, dict):
+            return str(msg.get(key, default))
+        try:
+            return str(msg[key])  # sqlite3.Row supports key access
+        except Exception:
+            return default
+
+    snippets: List[str] = []
+    for msg in messages[-max_messages:]:
+        role = _get_message_field(msg, "role", "user")
+        raw_content = _get_message_field(msg, "content", "").strip()
+        content = _shorten(raw_content)
+        if not content:
+            continue
+        snippets.append(f"- {role}: {content}")
+    return snippets
+
+
+def _can_call_llm_sync() -> bool:
+    try:
+        loop = asyncio.get_running_loop()
+        if loop and loop.is_running():
+            return False
+    except RuntimeError:
+        # No running loop
+        return True
+    return True
+
+
+def _ask_llm_once(
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float = 0.2,
+    max_tokens: int = 512,
+    on_delta: Optional[Callable[[str], None]] = None,
+) -> str:
+    if not _can_call_llm_sync():
+        return ""
+    async def _go() -> str:
+        final_parts: List[str] = []
+        stream = await llm_client.chat.completions.create(
+            model=get_current_model(),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+        async for chunk in stream:
+            try:
+                choice = chunk.choices[0]
+                delta = getattr(choice, "delta", None) or getattr(choice, "message", None) or choice
+                text = None
+                if delta is not None and hasattr(delta, "content"):
+                    text = getattr(delta, "content")
+                if text is None and isinstance(delta, dict):
+                    text = delta.get("content")
+                if text:
+                    final_parts.append(text)
+                    if on_delta:
+                        try:
+                            on_delta(text)
+                        except Exception:
+                            pass
+            except Exception:
+                continue
+        return ("".join(final_parts)).strip()
+
+    try:
+        return asyncio.run(_go())
+    except Exception:
+        return ""
+
+
+async def ask_llm_stream(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    temperature: float = 0.2,
+    max_tokens: int = 512,
+) -> AsyncGenerator[str, None]:
+    """Async generator yielding content tokens from the LLM.
+
+    Backed by the OpenAI-compatible streaming API exposed by the local client.
+    Yields only content deltas; ignores reasoning/tool_calls for simplicity.
+    """
+    stream = await llm_client.chat.completions.create(
+        model=get_current_model(),
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=temperature,
+        max_tokens=max_tokens,
+        stream=True,
+    )
+    async for chunk in stream:
+        try:
+            choice = chunk.choices[0]
+            delta = getattr(choice, "delta", None) or getattr(choice, "message", None) or choice
+            text = None
+            if delta is not None and hasattr(delta, "content"):
+                text = getattr(delta, "content")
+            if text is None and isinstance(delta, dict):
+                text = delta.get("content")
+            if text:
+                yield text
+        except Exception:
+            continue
 
 
 def list_todos(detailed: bool = False, session_id: str | None = None) -> List[Any]:
@@ -96,7 +222,12 @@ def list_directory(path: str = ".") -> Dict[str, Any]:
 
 
 def derive_project_idea(session_id: str) -> Dict[str, Any]:
-    """Analyze chat history to derive and save a project idea."""
+    """Analyze chat history to derive and save a project idea.
+
+    Attempts an LLM-generated idea first using recent chat messages. Falls back
+    to simple keyword extraction to ensure deterministic behavior when LLM is
+    unavailable.
+    """
     if not session_id:
         return {"ok": False, "error": "Session ID is required"}
 
@@ -105,43 +236,44 @@ def derive_project_idea(session_id: str) -> Dict[str, Any]:
     if not messages:
         return {"ok": False, "error": "No chat history found for this session"}
 
-    # Analyze messages to extract project-related information
-    user_messages = [msg for msg in messages if msg["role"] == "user"]
-    assistant_messages = [msg for msg in messages if msg["role"] == "assistant"]
+    # LLM attempt
+    snippets = _build_conversation_snippets(messages)
+    user_prompt = "Draft a concise project idea based on these messages.\n\n" + "\n".join(snippets)
+    project_idea_llm = _ask_llm_once(PROJECT_IDEA_SYSTEM_PROMPT, user_prompt, temperature=0.2, max_tokens=256)
 
-    # Extract key concepts from chat
-    content_text = " ".join([msg["content"] for msg in messages])
-
-    # Simple keyword-based project idea extraction
-    keywords = []
-    tech_terms = ["web", "app", "mobile", "ai", "ml", "blockchain", "api", "dashboard",
-                  "automation", "analytics", "chat", "game", "tool", "platform", "system"]
-
+    # Fallback keyword-based extraction
+    def _get_field(m: Any, k: str) -> str:
+        if isinstance(m, dict):
+            return str(m.get(k, ""))
+        try:
+            return str(m[k])
+        except Exception:
+            return ""
+    content_text = " ".join([_get_field(msg, "content") for msg in messages])
+    keywords: List[str] = []
+    tech_terms = [
+        "web", "app", "mobile", "ai", "ml", "blockchain", "api", "dashboard",
+        "automation", "analytics", "chat", "game", "tool", "platform", "system",
+    ]
     for term in tech_terms:
         if term.lower() in content_text.lower():
             keywords.append(term)
 
-    # Generate project idea based on analysis
-    if keywords:
-        project_idea = f"A {' & '.join(keywords[:3])} solution that addresses the problems discussed in the chat. "
-        project_idea += "The project leverages modern technologies to create an innovative hackathon submission."
-    else:
-        project_idea = "An innovative solution derived from the conversation topics and user requirements discussed."
+    fallback_idea = (
+        f"A {' & '.join(keywords[:3])} solution that addresses the problems discussed in the chat. "
+        "The project leverages modern technologies to create an innovative hackathon submission."
+        if keywords
+        else "An innovative solution derived from the conversation topics and user requirements discussed."
+    )
 
-    # Add more context from recent user messages
-    if user_messages:
-        recent_context = user_messages[-3:]  # Last 3 user messages
-        context_summary = " Key focus areas include: " + "; ".join([
-            msg["content"][:100] + "..." if len(msg["content"]) > 100 else msg["content"]
-            for msg in recent_context
-        ])
-        project_idea += context_summary
+    project_idea = project_idea_llm or fallback_idea
 
     # Save the project idea
     metadata = {
         "keywords": keywords,
         "message_count": len(messages),
-        "generated_from": "chat_analysis"
+        "generated_from": "llm_first_fallback_keywords",
+        "llm_used": bool(project_idea_llm),
     }
 
     save_project_artifact(session_id, "project_idea", project_idea, metadata)
@@ -155,7 +287,13 @@ def derive_project_idea(session_id: str) -> Dict[str, Any]:
 
 
 def create_tech_stack(session_id: str) -> Dict[str, Any]:
-    """Analyze chat history to create and save a recommended tech stack."""
+    """Analyze chat history to create and save a recommended tech stack.
+
+    Attempts an LLM-generated summary first using recent chat messages. Falls back
+    to keyword-based detection to ensure deterministic behavior when LLM is
+    unavailable. Always persists the artifact and returns detected technologies
+    for downstream consumers/tests.
+    """
     if not session_id:
         return {"ok": False, "error": "Session ID is required"}
 
@@ -164,6 +302,42 @@ def create_tech_stack(session_id: str) -> Dict[str, Any]:
         return {"ok": False, "error": "No chat history found for this session"}
 
     content_text = " ".join([msg["content"] for msg in messages]).lower()
+
+    # Try LLM generation first (best-effort; safe fallback on error)
+    llm_text: str = ""
+    try:
+        # Build concise system and user prompts to drive a structured summary
+        system_prompt = TECH_STACK_SYSTEM_PROMPT
+        # Include a compact view of recent messages for context
+        def _shorten(s: str, limit: int = 220) -> str:
+            return (s[: limit - 3] + "...") if len(s) > limit else s
+
+        convo_snippets = _build_conversation_snippets(messages, max_messages=20)
+        user_prompt = (
+            "Create a recommended tech stack strictly from these messages.\n\n"
+            + "\n".join(convo_snippets)
+        )
+
+        async def _ask_llm() -> str:
+            resp = await llm_client.chat.completions.create(
+                model=get_current_model(),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.2,
+                max_tokens=512,
+                stream=False,
+            )
+            try:
+                return (resp.choices[0].message.content or "").strip()
+            except Exception:
+                return ""
+
+        # Run in a new event loop in this thread (sync context)
+        llm_text = asyncio.run(_ask_llm())
+    except Exception:
+        llm_text = ""
 
     # Technology detection based on mentions in chat
     frontend_techs = []
@@ -219,12 +393,12 @@ def create_tech_stack(session_id: str) -> Dict[str, Any]:
             "frontend": ["React", "Tailwind CSS"],
             "backend": ["FastAPI", "Python"],
             "database": ["SQLite"],
-            "other": ["RESTful API"]
+            "other": ["RESTful API"],
         }
     else:
         # Clean up and format detected technologies
         for category in detected_techs:
-            detected_techs[category] = list(set(detected_techs[category]))  # Remove duplicates
+            detected_techs[category] = list(set(detected_techs[category]))
 
     # Format tech stack description
     tech_stack_parts = []
@@ -237,13 +411,16 @@ def create_tech_stack(session_id: str) -> Dict[str, Any]:
     if detected_techs["other"]:
         tech_stack_parts.append(f"Additional: {', '.join(detected_techs['other'])}")
 
-    tech_stack = " | ".join(tech_stack_parts)
+    # Prefer LLM-produced text when available; otherwise use deterministic fallback
+    fallback_text = " | ".join(tech_stack_parts)
+    tech_stack = llm_text if llm_text else fallback_text
 
     # Save the tech stack
     metadata = {
         "detected_technologies": detected_techs,
         "message_count": len(messages),
-        "generated_from": "chat_analysis"
+        "generated_from": "llm_first_fallback_keywords",
+        "llm_used": bool(llm_text),
     }
 
     save_project_artifact(session_id, "tech_stack", tech_stack, metadata)
@@ -257,7 +434,11 @@ def create_tech_stack(session_id: str) -> Dict[str, Any]:
 
 
 def summarize_chat_history(session_id: str) -> Dict[str, Any]:
-    """Generate submission notes by summarizing chat history and project progress."""
+    """Generate submission notes by summarizing chat history and project progress.
+
+    Attempts an LLM-generated summary first using recent chat messages and known
+    artifacts. Falls back to a deterministic rule-based summary.
+    """
     if not session_id:
         return {"ok": False, "error": "Session ID is required"}
 
@@ -293,48 +474,52 @@ def summarize_chat_history(session_id: str) -> Dict[str, Any]:
     todos = list_todos_db(session_id=session_id)
     current_todos = [todo["item"] for todo in todos] if todos else []
 
-    # Build summary
-    summary_parts = []
+    # LLM attempt
+    snippets = _build_conversation_snippets(messages, max_messages=40)
+    user_prompt_lines: List[str] = []
+    if project_idea_artifact:
+        user_prompt_lines.append(f"Project Idea: {project_idea_artifact['content']}")
+    if tech_stack_artifact:
+        user_prompt_lines.append(f"Tech Stack: {tech_stack_artifact['content']}")
+    user_prompt_lines.append("Conversation (most recent first):")
+    user_prompt_lines.extend(snippets)
+    llm_summary = _ask_llm_once(
+        SUBMISSION_SUMMARY_SYSTEM_PROMPT,
+        "\n".join(user_prompt_lines),
+        temperature=0.1,
+        max_tokens=600,
+    )
 
-    summary_parts.append(f"## Hackathon Project Summary")
+    # Fallback summary
+    summary_parts: List[str] = []
+    summary_parts.append("## Hackathon Project Summary")
     summary_parts.append(f"**Total Messages:** {len(messages)} ({len(user_messages)} user, {len(assistant_messages)} assistant)")
-
     if project_idea_artifact:
         summary_parts.append(f"**Project Idea:** {project_idea_artifact['content'][:200]}...")
-
     if tech_stack_artifact:
         summary_parts.append(f"**Tech Stack:** {tech_stack_artifact['content']}")
-
     if accomplishments:
         summary_parts.append(f"**Key Accomplishments:** {len(set(accomplishments))} areas of progress")
-
     if challenges:
         summary_parts.append(f"**Challenges Addressed:** {len(set(challenges))} technical issues discussed")
-
     if current_todos:
         summary_parts.append(f"**Remaining Tasks:** {len(current_todos)} items in todo list")
-        summary_parts.append("  - " + "\n  - ".join(current_todos[:5]))  # Show first 5 todos
+        summary_parts.append("  - " + "\n  - ".join(current_todos[:5]))
         if len(current_todos) > 5:
             summary_parts.append(f"  - ... and {len(current_todos) - 5} more")
-
-    # Add conversation highlights
     if len(messages) > 10:
-        summary_parts.append(f"**Conversation Highlights:**")
-        # Get first and last few messages for context
+        summary_parts.append("**Conversation Highlights:**")
         early_context = messages[:2]
         recent_context = messages[-3:]
-
         for msg in early_context:
             if msg["role"] == "user":
                 content = msg["content"][:150] + "..." if len(msg["content"]) > 150 else msg["content"]
                 summary_parts.append(f"  - Early: {content}")
-
         for msg in recent_context:
             if msg["role"] == "user":
                 content = msg["content"][:150] + "..." if len(msg["content"]) > 150 else msg["content"]
                 summary_parts.append(f"  - Recent: {content}")
-
-    submission_summary = "\n\n".join(summary_parts)
+    submission_summary = llm_summary or "\n\n".join(summary_parts)
 
     # Save the summary
     metadata = {
@@ -342,7 +527,8 @@ def summarize_chat_history(session_id: str) -> Dict[str, Any]:
         "user_messages": len(user_messages),
         "assistant_messages": len(assistant_messages),
         "todo_count": len(current_todos),
-        "generated_from": "full_chat_analysis"
+        "generated_from": "llm_first_fallback_rule_summary",
+        "llm_used": bool(llm_summary),
     }
 
     save_project_artifact(session_id, "submission_summary", submission_summary, metadata)

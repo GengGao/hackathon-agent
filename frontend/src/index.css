@@ -500,3 +500,12 @@ h6 {
   bottom: 0;
   background-image: linear-gradient(to top, white, transparent);
 }
+
+.skeleton-text {
+  list-style: none;
+  opacity: 0.5;
+}
+
+.skeleton-text li {
+  background: linear-gradient(45deg, #667eeaa3, #0da0a5c6, #58e1b8d0, #5784f5a0);
+}

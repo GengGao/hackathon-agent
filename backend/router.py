@@ -2,11 +2,13 @@ from fastapi import APIRouter, UploadFile, File, Form, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import List, Dict, Any, Optional
 from llm import generate_stream, check_ollama_status, get_current_model, set_model
+from prompts import build_hackathon_system_prompt
 from rag import RuleRAG
 from tools import (
     get_tool_schemas, call_tool, list_todos, add_todo, clear_todos,
     update_todo, delete_todo,
-    derive_project_idea, create_tech_stack, summarize_chat_history
+    derive_project_idea, create_tech_stack, summarize_chat_history,
+    ask_llm_stream,
 )
 from models.db import (
     create_chat_session,
@@ -35,6 +37,12 @@ from PIL import Image
 import requests
 from models.db import add_rule_context, get_rules_rows
 import re
+from prompts import (
+    PROJECT_IDEA_SYSTEM_PROMPT,
+    TECH_STACK_SYSTEM_PROMPT,
+    SUBMISSION_SUMMARY_SYSTEM_PROMPT,
+)
+from models.db import save_project_artifact
 
 router = APIRouter()
 # Initialise RAG with default rule file (user can replace via API call later)
@@ -165,25 +173,7 @@ async def chat_stream(
     rule_text = "\n".join([f"Rule Chunk {i+1}:\n{chunk}" for i, (chunk, _) in enumerate(rule_hits)])
 
     # Build system prompt for the LLM (explicit tool usage guidance added)
-    system_prompt = f"""You are **HackathonHero**, an expert assistant that helps participants create, refine, and submit hackathon projects completely offline.
-
-    You have access to function-calling tools. Use them when they clearly help the user:
-    - Use add_todo to add actionable tasks to the project To-Do list.
-    - Use list_todos to recall current tasks and trust its output. Present the items without speculation or self-correction.
-    - Use clear_todos to reset the task list when asked.
-    - Use list_directory to explore local files when requested.
-
-    Important runtime rule for tools:
-    - The current chat session id (session_id) is automatically provided by the system at execution time. Never ask the user for the session id. You may omit it in your arguments; the runtime will inject the correct value. If you include it, the system value will override it.
-
-    Rules context (authoritative):
-    {rule_text}
-
-    Guidance:
-    - Prefer using tools to perform actions instead of describing actions.
-    - When planning work, convert steps into separate add_todo calls.
-    - Keep the tone clear, concise, and encouraging. Do not mention any external APIs or internet resources.
-    - Cite rule chunk numbers in brackets if you refer to a specific rule."""
+    system_prompt = build_hackathon_system_prompt(rule_text)
 
     # Load previous chat history for context
     chat_history = get_chat_messages(session_id, limit=20)  # Last 20 messages
@@ -191,7 +181,7 @@ async def chat_stream(
     # Build messages for tool-enabled streaming
     tools = get_tool_schemas()
     messages: List[Dict[str, Any]] = [
-        {"role": "system", "content": system_prompt + "\n\n" + rule_text},
+        {"role": "system", "content": system_prompt},
     ]
 
     # Add previous chat history (excluding the current message we just added)
@@ -222,7 +212,7 @@ async def chat_stream(
         last_heartbeat = time.time()
         async for data in generate_stream(
                 user_content,
-                system=system_prompt + "\n\n" + rule_text,
+                system=system_prompt,
                 tools=tools,
                 execute_tool=lambda fn, args: call_tool(
                     fn,
@@ -545,31 +535,223 @@ async def set_ollama_model(model: str = Form(...)):
 
 
 @router.post("/chat-sessions/{session_id}/derive-project-idea")
-def derive_project_idea_route(session_id: str):
-    """Derive project idea from chat history."""
+def derive_project_idea_route(session_id: str, stream: Optional[bool] = Query(False)):
+    """Derive project idea from chat history. Supports SSE when stream=true."""
     try:
-        result = derive_project_idea(session_id)
-        return result
+        if not stream:
+            result = derive_project_idea(session_id)
+            return result
+
+        # SSE streaming path
+        msgs = get_chat_messages(session_id, limit=50)
+        if not msgs:
+            return JSONResponse(status_code=400, content={"error": "No chat history found for this session"})
+
+        # Build user prompt from recent conversation
+        def _get_field(m, k):
+            try:
+                return m[k]
+            except Exception:
+                return m.get(k)
+        snippets = []
+        for m in msgs[-20:]:
+            role = _get_field(m, "role") or "user"
+            content = (_get_field(m, "content") or "")
+            content = content[:217] + "..." if len(content) > 220 else content
+            if content:
+                snippets.append(f"- {role}: {content}")
+        user_prompt = "Draft a concise project idea based on these messages.\n\n" + "\n".join(snippets)
+
+        async def token_generator():
+            final_parts: List[str] = []
+            try:
+                async for chunk in ask_llm_stream(PROJECT_IDEA_SYSTEM_PROMPT, user_prompt, temperature=0.2, max_tokens=256):
+                    final_parts.append(chunk)
+                    yield f"data: {json.dumps({'type': 'token', 'token': chunk})}\n\n"
+            except Exception:
+                pass
+            full_text = ("".join(final_parts)).strip()
+            if not full_text:
+                # Fallback keyword-based idea
+                content_text = " ".join([_get_field(m, "content") or "" for m in msgs])
+                tech_terms = ["web", "app", "mobile", "ai", "ml", "blockchain", "api", "dashboard", "automation", "analytics", "chat", "game", "tool", "platform", "system"]
+                keywords = [t for t in tech_terms if t in content_text.lower()]
+                if keywords:
+                    full_text = f"A {' & '.join(keywords[:3])} solution that addresses the problems discussed in the chat. The project leverages modern technologies to create an innovative hackathon submission."
+                else:
+                    full_text = "An innovative solution derived from the conversation topics and user requirements discussed."
+                yield f"data: {json.dumps({'type': 'token', 'token': full_text})}\n\n"
+            # Persist artifact
+            meta = {"generated_from": "sse_llm_first_fallback", "llm_used": bool(final_parts), "message_count": len(msgs)}
+            try:
+                save_project_artifact(session_id, "project_idea", full_text, meta)
+            except Exception:
+                pass
+            yield f"data: {json.dumps({'type': 'end'})}\n\n"
+
+        return StreamingResponse(token_generator(), media_type="text/event-stream")
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @router.post("/chat-sessions/{session_id}/create-tech-stack")
-def create_tech_stack_route(session_id: str):
-    """Create tech stack from chat history."""
+def create_tech_stack_route(session_id: str, stream: Optional[bool] = Query(False)):
+    """Create tech stack from chat history. Supports SSE when stream=true."""
     try:
-        result = create_tech_stack(session_id)
-        return result
+        if not stream:
+            result = create_tech_stack(session_id)
+            return result
+
+        msgs = get_chat_messages(session_id, limit=50)
+        if not msgs:
+            return JSONResponse(status_code=400, content={"error": "No chat history found for this session"})
+
+        def _get_field(m, k):
+            try:
+                return m[k]
+            except Exception:
+                return m.get(k)
+        snippets = []
+        for m in msgs[-20:]:
+            role = _get_field(m, "role") or "user"
+            content = (_get_field(m, "content") or "")
+            content = content[:217] + "..." if len(content) > 220 else content
+            if content:
+                snippets.append(f"- {role}: {content}")
+        user_prompt = "Create a recommended tech stack strictly from these messages.\n\n" + "\n".join(snippets)
+
+        async def token_generator():
+            final_parts: List[str] = []
+            try:
+                async for chunk in ask_llm_stream(TECH_STACK_SYSTEM_PROMPT, user_prompt, temperature=0.2, max_tokens=512):
+                    final_parts.append(chunk)
+                    yield f"data: {json.dumps({'type': 'token', 'token': chunk})}\n\n"
+            except Exception:
+                pass
+            full_text = ("".join(final_parts)).strip()
+            if not full_text:
+                # Fallback to deterministic mapping
+                content_text = " ".join([(_get_field(m, "content") or "").lower() for m in msgs])
+                tech_mapping = {
+                    "frontend": {
+                        "react": ["react", "jsx", "create-react-app"],
+                        "vue": ["vue", "vuejs"],
+                        "angular": ["angular"],
+                        "svelte": ["svelte"],
+                        "html/css/js": ["html", "css", "javascript", "js"],
+                    },
+                    "backend": {
+                        "fastapi": ["fastapi", "uvicorn"],
+                        "express": ["express", "nodejs", "node.js"],
+                        "django": ["django"],
+                        "flask": ["flask"],
+                        "python": ["python"],
+                        "node.js": ["node", "nodejs"],
+                    },
+                    "database": {
+                        "sqlite": ["sqlite"],
+                        "postgresql": ["postgres", "postgresql"],
+                        "mongodb": ["mongo", "mongodb"],
+                        "mysql": ["mysql"],
+                    },
+                    "other": {
+                        "ollama": ["ollama", "llm"],
+                        "ai/ml": ["ai", "machine learning", "ml", "tensorflow", "pytorch"],
+                        "blockchain": ["blockchain", "web3", "ethereum"],
+                        "cloud": ["aws", "azure", "gcp", "cloud"],
+                    },
+                }
+                detected = {"frontend": [], "backend": [], "database": [], "other": []}
+                for cat, techs in tech_mapping.items():
+                    for name, kws in techs.items():
+                        if any(k in content_text for k in kws):
+                            detected[cat].append(name)
+                if not any(detected.values()):
+                    detected = {"frontend": ["React", "Tailwind CSS"], "backend": ["FastAPI", "Python"], "database": ["SQLite"], "other": ["RESTful API"]}
+                else:
+                    for cat in detected:
+                        detected[cat] = list(set(detected[cat]))
+                parts = []
+                if detected["frontend"]: parts.append(f"Frontend: {', '.join(detected['frontend'])}")
+                if detected["backend"]: parts.append(f"Backend: {', '.join(detected['backend'])}")
+                if detected["database"]: parts.append(f"Database: {', '.join(detected['database'])}")
+                if detected["other"]: parts.append(f"Additional: {', '.join(detected['other'])}")
+                full_text = " | ".join(parts)
+                yield f"data: {json.dumps({'type': 'token', 'token': full_text})}\n\n"
+            meta = {"generated_from": "sse_llm_first_fallback", "llm_used": bool(final_parts), "message_count": len(msgs)}
+            try:
+                save_project_artifact(session_id, "tech_stack", full_text, meta)
+            except Exception:
+                pass
+            yield f"data: {json.dumps({'type': 'end'})}\n\n"
+
+        return StreamingResponse(token_generator(), media_type="text/event-stream")
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @router.post("/chat-sessions/{session_id}/summarize-chat-history")
-def summarize_chat_history_route(session_id: str):
-    """Generate submission notes from chat history."""
+def summarize_chat_history_route(session_id: str, stream: Optional[bool] = Query(False)):
+    """Generate submission notes from chat history. Supports SSE when stream=true."""
     try:
-        result = summarize_chat_history(session_id)
-        return result
+        if not stream:
+            result = summarize_chat_history(session_id)
+            return result
+
+        msgs = get_chat_messages(session_id)
+        if not msgs:
+            return JSONResponse(status_code=400, content={"error": "No chat history found for this session"})
+
+        idea_art = get_project_artifact(session_id, "project_idea")
+        stack_art = get_project_artifact(session_id, "tech_stack")
+
+        def _get_field(m, k):
+            try:
+                return m[k]
+            except Exception:
+                return m.get(k)
+        snippets = []
+        for m in msgs[-40:]:
+            role = _get_field(m, "role") or "user"
+            content = (_get_field(m, "content") or "")
+            content = content[:217] + "..." if len(content) > 220 else content
+            if content:
+                snippets.append(f"- {role}: {content}")
+        up_lines: List[str] = []
+        if idea_art:
+            up_lines.append(f"Project Idea: {idea_art['content']}")
+        if stack_art:
+            up_lines.append(f"Tech Stack: {stack_art['content']}")
+        up_lines.append("Conversation (most recent first):")
+        up_lines.extend(snippets)
+        user_prompt = "\n".join(up_lines)
+
+        async def token_generator():
+            final_parts: List[str] = []
+            try:
+                async for chunk in ask_llm_stream(SUBMISSION_SUMMARY_SYSTEM_PROMPT, user_prompt, temperature=0.1, max_tokens=600):
+                    final_parts.append(chunk)
+                    yield f"data: {json.dumps({'type': 'token', 'token': chunk})}\n\n"
+            except Exception:
+                pass
+            full_text = ("".join(final_parts)).strip()
+            if not full_text:
+                # Fallback: reuse deterministic builder from tools via function call
+                try:
+                    result = summarize_chat_history(session_id)
+                    full_text = result.get("submission_summary", "")
+                except Exception:
+                    full_text = ""
+                if full_text:
+                    yield f"data: {json.dumps({'type': 'token', 'token': full_text})}\n\n"
+            meta = {"generated_from": "sse_llm_first_fallback", "llm_used": bool(final_parts), "message_count": len(msgs)}
+            try:
+                save_project_artifact(session_id, "submission_summary", full_text, meta)
+            except Exception:
+                pass
+            yield f"data: {json.dumps({'type': 'end'})}\n\n"
+
+        return StreamingResponse(token_generator(), media_type="text/event-stream")
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
