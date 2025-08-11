@@ -247,6 +247,7 @@ async def chat_stream(
                     fn,
                     {**(args or {}), **({"session_id": session_id} if session_id else {})}
                 ),
+                seed_messages=messages,
             ):
                 if isinstance(data, dict):
                     if data.get("type") == "thinking":
@@ -578,10 +579,30 @@ def derive_project_idea_route(session_id: str, stream: Optional[bool] = Query(Fa
                 snippets.append(f"- {role}: {content}")
         user_prompt = build_project_idea_user_prompt(snippets)
 
+        # Provide full role-annotated history to the LLM
+        seed_messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": PROJECT_IDEA_SYSTEM_PROMPT}
+        ]
+        for m in msgs[-20:]:
+            try:
+                role = _get_field(m, "role") or "user"
+                content_full = (_get_field(m, "content") or "")
+                if content_full:
+                    seed_messages.append({"role": role, "content": content_full})
+            except Exception:
+                continue
+        seed_messages.append({"role": "user", "content": user_prompt})
+
         async def token_generator():
             final_parts: List[str] = []
             try:
-                async for chunk in ask_llm_stream(PROJECT_IDEA_SYSTEM_PROMPT, user_prompt, temperature=0.2, max_tokens=256):
+                async for chunk in ask_llm_stream(
+                    PROJECT_IDEA_SYSTEM_PROMPT,
+                    user_prompt,
+                    temperature=0.2,
+                    max_tokens=256,
+                    seed_messages=seed_messages,
+                ):
                     final_parts.append(chunk)
                     yield f"data: {json.dumps({'type': 'token', 'token': chunk})}\n\n"
             except Exception:
@@ -636,10 +657,30 @@ def create_tech_stack_route(session_id: str, stream: Optional[bool] = Query(Fals
                 snippets.append(f"- {role}: {content}")
         user_prompt = build_tech_stack_user_prompt(snippets)
 
+        # Provide full role-annotated history to the LLM
+        seed_messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": TECH_STACK_SYSTEM_PROMPT}
+        ]
+        for m in msgs[-20:]:
+            try:
+                role = _get_field(m, "role") or "user"
+                content_full = (_get_field(m, "content") or "")
+                if content_full:
+                    seed_messages.append({"role": role, "content": content_full})
+            except Exception:
+                continue
+        seed_messages.append({"role": "user", "content": user_prompt})
+
         async def token_generator():
             final_parts: List[str] = []
             try:
-                async for chunk in ask_llm_stream(TECH_STACK_SYSTEM_PROMPT, user_prompt, temperature=0.2, max_tokens=512):
+                async for chunk in ask_llm_stream(
+                    TECH_STACK_SYSTEM_PROMPT,
+                    user_prompt,
+                    temperature=0.2,
+                    max_tokens=512,
+                    seed_messages=seed_messages,
+                ):
                     final_parts.append(chunk)
                     yield f"data: {json.dumps({'type': 'token', 'token': chunk})}\n\n"
             except Exception:
@@ -739,10 +780,37 @@ def summarize_chat_history_route(session_id: str, stream: Optional[bool] = Query
             stack_art['content'] if stack_art else None,
         )
 
+        # Provide full role-annotated history to the LLM
+        seed_messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": SUBMISSION_SUMMARY_SYSTEM_PROMPT}
+        ]
+        for m in msgs[-40:]:
+            try:
+                role = _get_field(m, "role") or "user"
+                content_full = (_get_field(m, "content") or "")
+                if content_full:
+                    seed_messages.append({"role": role, "content": content_full})
+            except Exception:
+                continue
+        seed_messages.append({
+            "role": "user",
+            "content": build_submission_summary_user_prompt(
+                snippets,
+                idea_art['content'] if idea_art else None,
+                stack_art['content'] if stack_art else None,
+            )
+        })
+
         async def token_generator():
             final_parts: List[str] = []
             try:
-                async for chunk in ask_llm_stream(SUBMISSION_SUMMARY_SYSTEM_PROMPT, user_prompt, temperature=0.1, max_tokens=600):
+                async for chunk in ask_llm_stream(
+                    SUBMISSION_SUMMARY_SYSTEM_PROMPT,
+                    user_prompt,
+                    temperature=0.1,
+                    max_tokens=600,
+                    seed_messages=seed_messages,
+                ):
                     final_parts.append(chunk)
                     yield f"data: {json.dumps({'type': 'token', 'token': chunk})}\n\n"
             except Exception:

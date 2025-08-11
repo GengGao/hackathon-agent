@@ -61,6 +61,7 @@ def _ask_llm_once(
     temperature: float = 0.2,
     max_tokens: int = 512,
     on_delta: Optional[Callable[[str], None]] = None,
+    seed_messages: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     if not _can_call_llm_sync():
         return ""
@@ -68,10 +69,10 @@ def _ask_llm_once(
         final_parts: List[str] = []
         stream = await llm_client.chat.completions.create(
             model=get_current_model(),
-            messages=[
+            messages=(seed_messages if seed_messages else [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
-            ],
+            ]),
             temperature=temperature,
             max_tokens=max_tokens,
             stream=True,
@@ -109,6 +110,7 @@ def _ask_llm_once_non_stream(
     temperature: float = 0.2,
     max_tokens: int = 512,
     allow_reasoning_fallback: bool = False,
+    seed_messages: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """Best-effort single-shot non-streaming call. Returns empty string on error."""
     if not _can_call_llm_sync():
@@ -118,10 +120,10 @@ def _ask_llm_once_non_stream(
         try:
             resp = await llm_client.chat.completions.create(
                 model=get_current_model(),
-                messages=[
+                messages=(seed_messages if seed_messages else [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
-                ],
+                ]),
                 temperature=temperature,
                 max_tokens=max_tokens,
                 stream=False,
@@ -163,6 +165,7 @@ async def ask_llm_stream(
     *,
     temperature: float = 0.2,
     max_tokens: int = 512,
+    seed_messages: Optional[List[Dict[str, Any]]] = None,
 ) -> AsyncGenerator[str, None]:
     """Async generator yielding content tokens from the LLM.
 
@@ -171,10 +174,10 @@ async def ask_llm_stream(
     """
     stream = await llm_client.chat.completions.create(
         model=get_current_model(),
-        messages=[
+        messages=(seed_messages if seed_messages else [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
-        ],
+        ]),
         temperature=temperature,
         max_tokens=max_tokens,
         stream=True,
@@ -290,7 +293,25 @@ def derive_project_idea(session_id: str) -> Dict[str, Any]:
     # LLM attempt
     snippets = _build_conversation_snippets(messages)
     user_prompt = build_project_idea_user_prompt(snippets)
-    project_idea_llm = _ask_llm_once(PROJECT_IDEA_SYSTEM_PROMPT, user_prompt, temperature=0.2, max_tokens=256)
+    # Build full role-annotated history for seed_messages
+    seed_messages: List[Dict[str, Any]] = [{"role": "system", "content": PROJECT_IDEA_SYSTEM_PROMPT}]
+    for m in messages[-20:]:
+        try:
+            role = m["role"] if isinstance(m, dict) else m["role"]
+            content_full = (m["content"] if isinstance(m, dict) else m["content"]) or ""
+        except Exception:
+            role, content_full = "user", ""
+        if content_full:
+            seed_messages.append({"role": role, "content": content_full})
+    seed_messages.append({"role": "user", "content": user_prompt})
+
+    project_idea_llm = _ask_llm_once(
+        PROJECT_IDEA_SYSTEM_PROMPT,
+        user_prompt,
+        temperature=0.2,
+        max_tokens=256,
+        seed_messages=seed_messages,
+    )
 
     # Fallback keyword-based extraction
     def _get_field(m: Any, k: str) -> str:
@@ -366,13 +387,22 @@ def create_tech_stack(session_id: str) -> Dict[str, Any]:
         convo_snippets = _build_conversation_snippets(messages, max_messages=20)
         user_prompt = build_tech_stack_user_prompt(convo_snippets)
 
+        # Build full role-annotated history for seed_messages
+        seed_messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+        for m in messages[-20:]:
+            try:
+                role = m["role"] if isinstance(m, dict) else m["role"]
+                content_full = (m["content"] if isinstance(m, dict) else m["content"]) or ""
+            except Exception:
+                role, content_full = "user", ""
+            if content_full:
+                seed_messages.append({"role": role, "content": content_full})
+        seed_messages.append({"role": "user", "content": user_prompt})
+
         async def _ask_llm() -> str:
             resp = await llm_client.chat.completions.create(
                 model=get_current_model(),
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
+                messages=seed_messages,
                 temperature=0.2,
                 max_tokens=512,
                 stream=False,
@@ -529,11 +559,24 @@ def summarize_chat_history(session_id: str) -> Dict[str, Any]:
         project_idea_artifact['content'] if project_idea_artifact else None,
         tech_stack_artifact['content'] if tech_stack_artifact else None,
     )
+    # Build full role-annotated history for seed_messages
+    seed_messages: List[Dict[str, Any]] = [{"role": "system", "content": SUBMISSION_SUMMARY_SYSTEM_PROMPT}]
+    for m in messages[-40:]:
+        try:
+            role = m["role"] if isinstance(m, dict) else m["role"]
+            content_full = (m["content"] if isinstance(m, dict) else m["content"]) or ""
+        except Exception:
+            role, content_full = "user", ""
+        if content_full:
+            seed_messages.append({"role": role, "content": content_full})
+    seed_messages.append({"role": "user", "content": user_prompt})
+
     llm_summary = _ask_llm_once(
         SUBMISSION_SUMMARY_SYSTEM_PROMPT,
         user_prompt,
         temperature=0.1,
         max_tokens=600,
+        seed_messages=seed_messages,
     )
 
     # Fallback summary
@@ -661,7 +704,16 @@ def generate_chat_title(session_id: str, force: bool = False) -> Dict[str, Any]:
         return t.strip()
 
     # Try LLM first (non-streaming for reliability here)
-    llm_text = _ask_llm_once_non_stream(system_prompt, user_prompt, temperature=0.2, allow_reasoning_fallback=False)
+    llm_text = _ask_llm_once_non_stream(
+        system_prompt,
+        user_prompt,
+        temperature=0.2,
+        allow_reasoning_fallback=False,
+        seed_messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+    )
 
     # Validate LLM title
     def _valid(title: str) -> bool:

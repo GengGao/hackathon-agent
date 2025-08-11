@@ -70,15 +70,23 @@ async def generate_stream(
     max_reasoning_chars_per_round: int = 1000,
     max_reasoning_repeats: int = 10,
     max_reasoning_only_chunks: int = 200,
+    # When provided, use these chat messages directly (system/user/assistant history)
+    # instead of constructing from prompt/system. Each item should match OpenAI's
+    # chat message schema: {"role": "system|user|assistant|tool", "content": str, ...}
+    seed_messages: Optional[List[Dict[str, Any]]] = None,
 ) -> AsyncGenerator[Union[str, Dict], None]:
     """
     Async generator that yields tokens from the LLM response using OpenAI SDK directly.
     Handles thinking responses and streaming tool calls when available.
     """
+    # Build initial messages. If seed_messages is provided, use it as-is.
     messages: List[Dict[str, Any]] = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+    if seed_messages and len(seed_messages) > 0:
+        messages = list(seed_messages)
+    else:
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
 
     try:
         round_index = 0
