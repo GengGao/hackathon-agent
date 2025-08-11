@@ -37,7 +37,6 @@ export default function ChatBox({
 
 	return (
 		<>
-			{/* Chat Header */}
 			<div className="section-header">
 				<h3 className="text-lg font-semibold gradient-text">
 					<i className="fas fa-comments mr-2" />
@@ -118,7 +117,6 @@ export default function ChatBox({
 							<div className="message-content">
 								{msg.role === "assistant" ? (
 									<div className="text-readable-dark">
-										{/* Show raw text while streaming, markdown when complete */}
 										{i === messages.length - 1 && isTyping ? (
 											<div className="whitespace-pre-wrap">
 												{msg.content}

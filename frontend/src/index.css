@@ -477,12 +477,14 @@ h6 {
 .rule-chunks {
   display: -webkit-box;
   -webkit-box-orient: vertical;
+  line-clamp: 6;
   -webkit-line-clamp: 6;
   overflow: hidden;
   cursor: auto;
 }
 
 .rule-chunks:hover {
+  line-clamp: unset;
   -webkit-line-clamp: unset;
   overflow: auto;
 }

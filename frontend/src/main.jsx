@@ -9,13 +9,10 @@ createRoot(document.getElementById("root")).render(
 	</StrictMode>,
 );
 
-// Register PWA service worker (vite-plugin-pwa)
 if ("serviceWorker" in navigator) {
 	window.addEventListener("load", async () => {
 		try {
 			await navigator.serviceWorker.register("/sw.js");
-		} catch (err) {
-			// no-op
-		}
+		} catch (err) {}
 	});
 }
