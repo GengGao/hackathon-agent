@@ -116,6 +116,10 @@ cd backend
 python -m venv .venv
 . .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+# Optional (recommended for image OCR): install Tesseract system dependency
+# macOS:   brew install tesseract
+# Debian:  sudo apt-get update && sudo apt-get install -y tesseract-ocr
+# Windows: choco install tesseract
 python -c "from models.db import init_db; init_db()"
 uvicorn main:app --reload
 ```

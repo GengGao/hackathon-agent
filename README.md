@@ -70,6 +70,10 @@ Planned (near term): export submission pack ZIP; code scaffold tool; auto summar
 ### Prerequisites
 - Python 3.11+
 - Node 18+
+- Tesseract OCR (for image text extraction)
+  - macOS: `brew install tesseract`
+  - Ubuntu/Debian: `sudo apt-get update && sudo apt-get install -y tesseract-ocr`
+  - Windows (Chocolatey): `choco install tesseract`
 - [Ollama](https://ollama.com) installed
 - Pull at least one gpt-oss model:
 ```bash
