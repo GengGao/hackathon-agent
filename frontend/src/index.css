@@ -3,7 +3,9 @@
 @tailwind utilities;
 
 /* Ensure the app strictly fits the viewport and prevents page-level scrolling */
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   overflow: hidden;
 }
@@ -40,8 +42,15 @@ body::before {
 }
 
 @keyframes shimmer {
-  0%, 100% { background-position: 0% 0%; }
-  50% { background-position: 100% 100%; }
+
+  0%,
+  100% {
+    background-position: 0% 0%;
+  }
+
+  50% {
+    background-position: 100% 100%;
+  }
 }
 
 /* Glassmorphism effect for cards */
@@ -122,8 +131,13 @@ body::before {
 }
 
 @keyframes borderGlow {
-  0% { opacity: 0.6; }
-  100% { opacity: 1; }
+  0% {
+    opacity: 0.6;
+  }
+
+  100% {
+    opacity: 1;
+  }
 }
 
 /* Enhanced loader with gradient */
@@ -152,8 +166,13 @@ body::before {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 /* Gradient text effect with better contrast */
@@ -167,8 +186,15 @@ body::before {
 }
 
 @keyframes gradientShift {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
 }
 
 /* Enhanced button gradients */
@@ -207,8 +233,15 @@ body::before {
 }
 
 @keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
 }
 
 /* Blur overlay effect */
@@ -225,17 +258,55 @@ body::before {
   border: 1px solid rgba(255, 255, 255, 0.3);
   transition: all 0.3s ease;
   color: #1a202c;
+  /* Reserve space for scrollbar so it doesn't overlap the border */
+  scrollbar-gutter: stable both-edges;
+  padding-right: 1.25rem; /* ensure content doesn't sit under the scrollbar */
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: rgba(102, 126, 234, 0.5) transparent; /* Firefox: thumb + transparent track */
 }
 
 .enhanced-input:focus {
-  background: rgba(255, 255, 255, 0.95);
-  border-color: #667eea;
-  box-shadow: 0 0 20px rgba(102, 126, 234, 0.3);
+  /* Use background-clip layering to create a rounded gradient border */
+  border: 2px solid transparent;
+  border-radius: 0.5rem;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.95)),
+    linear-gradient(135deg, #2a4ce6 0%, #1e65b2 50%, #139854 100%);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  box-shadow: 0 0 20px rgba(42, 76, 230, 0.3);
   transform: scale(1.02);
+  outline: none;
 }
 
 .enhanced-input::placeholder {
   color: #6b7280;
+}
+
+/* Ensure the textarea's scrollbar doesn't visually block the border */
+.enhanced-input::-webkit-scrollbar {
+  width: 10px;
+}
+.enhanced-input::-webkit-scrollbar-track {
+  background: transparent;
+}
+.enhanced-input::-webkit-scrollbar-thumb {
+  background-color: rgba(102, 126, 234, 0.5);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.enhanced-input::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Global input and textarea focus styles with gradient border */
+input:focus,
+textarea:focus {
+  outline: none !important;
+  border: 2px solid transparent !important;
+  border-radius: 0.5rem !important;
+  box-shadow: 0 0 20px rgba(42, 76, 230, 0.3) !important;
 }
 
 /* Gradient border animation */
@@ -260,8 +331,15 @@ body::before {
 }
 
 @keyframes gradientBorder {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
 }
 
 /* Improved text readability classes */
@@ -294,7 +372,8 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.5rem 0.75rem; /* ~ py-2 px-3 */
+  padding: 0.5rem 0.75rem;
+  /* ~ py-2 px-3 */
   border-bottom: 1px solid rgba(255, 255, 255, 0.4);
   box-shadow:
     0 20px 24px -4px rgba(17, 24, 39, 0.14),
@@ -324,57 +403,75 @@ body::before {
 
 /* Basic table styling */
 table {
-  width: 100%; /* Make table span full width */
-  border-collapse: collapse; /* Collapse borders between cells */
+  width: 100%;
+  /* Make table span full width */
+  border-collapse: collapse;
+  /* Collapse borders between cells */
 }
 
 /* Header and data cell styling */
-th, td {
-  border: 1px solid #ccc; /* Add a border to cells */
-  padding: 8px; /* Add padding inside cells */
-  text-align: left; /* Align text to the left */
+th,
+td {
+  border: 1px solid #ccc;
+  /* Add a border to cells */
+  padding: 8px;
+  /* Add padding inside cells */
+  text-align: left;
+  /* Align text to the left */
 }
 
 /* Table header specific styling */
 th {
-  background-color: #f2f2f2; /* Light grey background for headers */
-  font-weight: bold; /* Bold text for headers */
+  background-color: #f2f2f2;
+  /* Light grey background for headers */
+  font-weight: bold;
+  /* Bold text for headers */
 }
 
 /* Zebra striping for rows (optional) */
 tr:nth-child(even) {
-  background-color: #f9f9f9; /* Lighter grey for even rows */
+  background-color: #f9f9f9;
+  /* Lighter grey for even rows */
 }
 
 /* Unordered list styling */
 ul {
-  list-style-type: disc; /* Default disc marker */
-  margin-left: 20px; /* Indent the list */
+  list-style-type: disc;
+  /* Default disc marker */
+  margin-left: 20px;
+  /* Indent the list */
 }
 
 /* Ordered list styling */
 ol {
-  list-style-type: decimal; /* Default decimal numbers */
-  margin-left: 20px; /* Indent the list */
+  list-style-type: decimal;
+  /* Default decimal numbers */
+  margin-left: 20px;
+  /* Indent the list */
 }
 
 /* List item styling */
 li {
-  padding: 5px 0; /* Add vertical padding to list items */
+  padding: 5px 0;
+  /* Add vertical padding to list items */
 }
 
 /* Remove default list styling (optional) */
 .no-bullets {
-  list-style-type: none; /* Remove markers */
-  padding: 0; /* Remove default padding */
-  margin: 0; /* Remove default margin */
+  list-style-type: none;
+  /* Remove markers */
+  padding: 0;
+  /* Remove default padding */
+  margin: 0;
+  /* Remove default margin */
 }
 
 
 blockquote {
   margin: 20px 0;
   padding: 15px 20px;
-  border-left: 5px solid #3498db; /* Left border */
+  border-left: 5px solid #3498db;
+  /* Left border */
   background-color: #f9f9f9;
   font-style: italic;
   color: #555;
@@ -382,11 +479,13 @@ blockquote {
 }
 
 blockquote p {
-  margin-bottom: 0; /* Remove default paragraph margin within blockquote */
+  margin-bottom: 0;
+  /* Remove default paragraph margin within blockquote */
 }
 
 blockquote cite {
-  display: block; /* Place citation on a new line */
+  display: block;
+  /* Place citation on a new line */
   text-align: right;
   font-size: 0.9em;
   color: #777;
@@ -394,57 +493,62 @@ blockquote cite {
 }
 
 h1 {
-    display: block;
-    font-size: 2em;
-    margin-top: 0.67em;
-    margin-bottom: 0.67em;
-    margin-left: 0;
-    margin-right: 0;
-    font-weight: bold;
+  display: block;
+  font-size: 2em;
+  margin-top: 0.67em;
+  margin-bottom: 0.67em;
+  margin-left: 0;
+  margin-right: 0;
+  font-weight: bold;
 }
+
 h2 {
-    display: block;
-    /* font-size: 1.5em; */
-    margin-top: 0.83em;
-    margin-bottom: 0.83em;
-    margin-left: 0;
-    margin-right: 0;
-    font-weight: bold;
+  display: block;
+  /* font-size: 1.5em; */
+  margin-top: 0.83em;
+  margin-bottom: 0.83em;
+  margin-left: 0;
+  margin-right: 0;
+  font-weight: bold;
 }
+
 h3 {
-    display: block;
-    font-size: 1.17em;
-    margin-top: 1em;
-    margin-bottom: 1em;
-    margin-left: 0;
-    margin-right: 0;
-    font-weight: bold;
+  display: block;
+  font-size: 1.17em;
+  margin-top: 1em;
+  margin-bottom: 1em;
+  margin-left: 0;
+  margin-right: 0;
+  font-weight: bold;
 }
+
 h4 {
-    display: block;
-    margin-top: 1.33em;
-    margin-bottom: 1.33em;
-    margin-left: 0;
-    margin-right: 0;
-    font-weight: bold;
+  display: block;
+  margin-top: 1.33em;
+  margin-bottom: 1.33em;
+  margin-left: 0;
+  margin-right: 0;
+  font-weight: bold;
 }
+
 h5 {
-    display: block;
-    font-size: .83em;
-    margin-top: 1.67em;
-    margin-bottom: 1.67em;
-    margin-left: 0;
-    margin-right: 0;
-    font-weight: bold;
+  display: block;
+  font-size: .83em;
+  margin-top: 1.67em;
+  margin-bottom: 1.67em;
+  margin-left: 0;
+  margin-right: 0;
+  font-weight: bold;
 }
+
 h6 {
-    display: block;
-    font-size: .67em;
-    margin-top: 2.33em;
-    margin-bottom: 2.33em;
-    margin-left: 0;
-    margin-right: 0;
-    font-weight: bold;
+  display: block;
+  font-size: .67em;
+  margin-top: 2.33em;
+  margin-bottom: 2.33em;
+  margin-left: 0;
+  margin-right: 0;
+  font-weight: bold;
 }
 
 /* Context input sizing fixes */
