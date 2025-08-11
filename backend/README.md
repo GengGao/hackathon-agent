@@ -70,13 +70,13 @@ State (SQLite) ◀── models/db helpers ── FastAPI Router ──▶ llm.g
 
 ---
 ## Tools / Function Calling
-Declared in `tools.py` via `get_tool_schemas()` (OpenAI function schema). Execution dispatch: `FUNCTION_DISPATCH` mapping → simple lambdas. Additions only require:
-1. Implement function logic (pure, deterministic if possible).
-2. Add schema entry.
-3. Add dispatch line.
+Declared in `tools/registry.py` via `get_tool_schemas()` (OpenAI function schema) with lazy `call_tool` dispatch. Additions only require:
+1. Implement function logic in an appropriate module under `backend/tools/` (pure if possible).
+2. Add schema entry in `tools/registry.py`.
+3. Ensure `call_tool` resolves your function name.
 4. (Optional) Frontend UI support.
 
-Current tools: todos CRUD (`list_todos`, `add_todo`, `clear_todos`), `list_directory`, artifact generators (`derive_project_idea`, `create_tech_stack`, `summarize_chat_history`).
+Current tools: todos CRUD (`list_todos`, `add_todo`, `clear_todos`), `list_directory`, artifact generators (`derive_project_idea`, `create_tech_stack`, `summarize_chat_history`), `generate_chat_title`.
 
 ---
 ## RAG Pipeline
@@ -130,9 +130,9 @@ See root README (API Snapshot) for table. This backend README focuses on extensi
 
 ---
 ## Adding a New Tool
-1. Implement Python function (pure if possible) in `tools.py`.
-2. Add JSON schema entry inside `get_tool_schemas()`.
-3. Add execution mapping in `FUNCTION_DISPATCH`.
+1. Implement Python function in `backend/tools/<area>.py`.
+2. Add JSON schema entry inside `tools/registry.py:get_tool_schemas()`.
+3. Ensure name is handled in `tools/registry.py:call_tool`.
 4. (Optional) Create matching frontend UI component if user-triggered.
 5. (Optional) Add tests under `tests/` verifying tool behavior.
 

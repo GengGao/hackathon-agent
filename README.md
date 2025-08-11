@@ -55,7 +55,7 @@ Planned (near term): export submission pack ZIP; code scaffold tool; auto summar
 **Key Components**
 - `backend/llm.py`: streaming + tool call processing (OpenAI-compatible client to Ollama)
 - `backend/rag.py`: rule chunking + FAISS index (SentenceTransformer MiniLM embeddings)
-- `backend/tools.py`: todo CRUD, directory listing, artifact generators
+- `backend/tools/`: modular tools package (todos, fs, artifacts, titles, registry)
 - `backend/models/db.py`: migrations + persistence helpers
 - `frontend/src/*`: chat UI, SSE handling, todo manager
 
