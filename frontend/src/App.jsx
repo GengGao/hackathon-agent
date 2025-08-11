@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import ChatBox from "./components/ChatBox";
 import ChatHistory from "./components/ChatHistory";
 import FileDrop from "./components/FileDrop";
 import TodoManager from "./components/TodoManager";
-
-// Network requests use native fetch
 
 function App() {
 	const [messages, setMessages] = useState([]);
@@ -1018,7 +1018,9 @@ function App() {
 									{isStreamingIdea && !dashboardData.idea ? (
 										<SkeletonText lines={4} />
 									) : (
-										dashboardData.idea
+										<ReactMarkdown remarkPlugins={[remarkGfm]}>
+											{dashboardData.idea}
+										</ReactMarkdown>
 									)}
 								</p>
 							</div>
@@ -1042,7 +1044,9 @@ function App() {
 									{isStreamingStack && !dashboardData.stack ? (
 										<SkeletonText lines={4} />
 									) : (
-										dashboardData.stack
+										<ReactMarkdown remarkPlugins={[remarkGfm]}>
+											{dashboardData.stack}
+										</ReactMarkdown>
 									)}
 								</p>
 							</div>
@@ -1076,7 +1080,9 @@ function App() {
 									{isStreamingSummary && !dashboardData.submission ? (
 										<SkeletonText lines={6} />
 									) : (
-										dashboardData.submission
+										<ReactMarkdown remarkPlugins={[remarkGfm]}>
+											{dashboardData.submission}
+										</ReactMarkdown>
 									)}
 								</p>
 							</div>

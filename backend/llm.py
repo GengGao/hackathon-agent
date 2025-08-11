@@ -60,8 +60,8 @@ DEBUG_STREAM = os.getenv("DEBUG_STREAM", "0").lower() in ("1", "true", "yes")
 
 async def generate_stream(
     prompt: str,
-                         system: str = "",
-                         temperature: float = 0.7,
+    system: str = "",
+    temperature: float = 0.7,
     max_tokens: int = 1024,
     tools: Optional[List[Dict[str, Any]]] = None,
     execute_tool: Optional[Callable[[str, Dict[str, Any]], Any]] = None,
