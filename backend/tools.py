@@ -3,16 +3,22 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, AsyncGenerator, Optional, Callable
 import asyncio
+from utils.text import strip_context_blocks
 from models.db import (
     list_todos_db, add_todo_db, clear_todos_db, update_todo_db, delete_todo_db,
     get_chat_messages, save_project_artifact, get_project_artifact,
-    get_all_project_artifacts
+    get_all_project_artifacts, get_chat_session, update_chat_session_title
 )
 from llm import client as llm_client, get_current_model
 from prompts import (
     TECH_STACK_SYSTEM_PROMPT,
     PROJECT_IDEA_SYSTEM_PROMPT,
     SUBMISSION_SUMMARY_SYSTEM_PROMPT,
+    CHAT_TITLE_SYSTEM_PROMPT,
+    build_chat_title_user_prompt,
+    build_project_idea_user_prompt,
+    build_tech_stack_user_prompt,
+    build_submission_summary_user_prompt,
 )
 def _shorten(text: str, limit: int = 220) -> str:
     return (text[: limit - 3] + "...") if len(text) > limit else text
@@ -31,7 +37,7 @@ def _build_conversation_snippets(messages: List[Dict[str, Any]], max_messages: i
     for msg in messages[-max_messages:]:
         role = _get_message_field(msg, "role", "user")
         raw_content = _get_message_field(msg, "content", "").strip()
-        content = _shorten(raw_content)
+        content = _shorten(strip_context_blocks(raw_content))
         if not content:
             continue
         snippets.append(f"- {role}: {content}")
@@ -96,6 +102,61 @@ def _ask_llm_once(
         return ""
 
 
+def _ask_llm_once_non_stream(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    temperature: float = 0.2,
+    max_tokens: int = 512,
+    allow_reasoning_fallback: bool = False,
+) -> str:
+    """Best-effort single-shot non-streaming call. Returns empty string on error."""
+    if not _can_call_llm_sync():
+        return ""
+
+    async def _go() -> str:
+        try:
+            resp = await llm_client.chat.completions.create(
+                model=get_current_model(),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=False,
+                extra_body={"reasoning_effort": "low"}
+            )
+            try:
+                # Prefer assistant message content; optionally fall back to reasoning if allowed
+                msg = resp.choices[0].message
+                content = ""
+                try:
+                    content = (getattr(msg, "content", None) or "").strip()
+                except Exception:
+                    content = ""
+                if not content and allow_reasoning_fallback:
+                    try:
+                        reasoning = getattr(msg, "reasoning", None) or getattr(msg, "reasoning_content", None)
+                        if not reasoning and isinstance(msg, dict):
+                            reasoning = msg.get("reasoning") or msg.get("reasoning_content")
+                        if reasoning:
+                            content = str(reasoning).strip()
+                    except Exception:
+                        pass
+
+                return content
+            except Exception:
+                return ""
+        except Exception:
+            return ""
+
+    try:
+        return asyncio.run(_go())
+    except Exception:
+        return ""
+
+
 async def ask_llm_stream(
     system_prompt: str,
     user_prompt: str,
@@ -117,6 +178,7 @@ async def ask_llm_stream(
         temperature=temperature,
         max_tokens=max_tokens,
         stream=True,
+        extra_body={"reasoning_effort": "medium"}
     )
     async for chunk in stream:
         try:
@@ -227,7 +289,7 @@ def derive_project_idea(session_id: str) -> Dict[str, Any]:
 
     # LLM attempt
     snippets = _build_conversation_snippets(messages)
-    user_prompt = "Draft a concise project idea based on these messages.\n\n" + "\n".join(snippets)
+    user_prompt = build_project_idea_user_prompt(snippets)
     project_idea_llm = _ask_llm_once(PROJECT_IDEA_SYSTEM_PROMPT, user_prompt, temperature=0.2, max_tokens=256)
 
     # Fallback keyword-based extraction
@@ -302,10 +364,7 @@ def create_tech_stack(session_id: str) -> Dict[str, Any]:
             return (s[: limit - 3] + "...") if len(s) > limit else s
 
         convo_snippets = _build_conversation_snippets(messages, max_messages=20)
-        user_prompt = (
-            "Create a recommended tech stack strictly from these messages.\n\n"
-            + "\n".join(convo_snippets)
-        )
+        user_prompt = build_tech_stack_user_prompt(convo_snippets)
 
         async def _ask_llm() -> str:
             resp = await llm_client.chat.completions.create(
@@ -465,16 +524,14 @@ def summarize_chat_history(session_id: str) -> Dict[str, Any]:
 
     # LLM attempt
     snippets = _build_conversation_snippets(messages, max_messages=40)
-    user_prompt_lines: List[str] = []
-    if project_idea_artifact:
-        user_prompt_lines.append(f"Project Idea: {project_idea_artifact['content']}")
-    if tech_stack_artifact:
-        user_prompt_lines.append(f"Tech Stack: {tech_stack_artifact['content']}")
-    user_prompt_lines.append("Conversation (most recent first):")
-    user_prompt_lines.extend(snippets)
+    user_prompt = build_submission_summary_user_prompt(
+        snippets,
+        project_idea_artifact['content'] if project_idea_artifact else None,
+        tech_stack_artifact['content'] if tech_stack_artifact else None,
+    )
     llm_summary = _ask_llm_once(
         SUBMISSION_SUMMARY_SYSTEM_PROMPT,
-        "\n".join(user_prompt_lines),
+        user_prompt,
         temperature=0.1,
         max_tokens=600,
     )
@@ -541,6 +598,116 @@ def summarize_chat_history(session_id: str) -> Dict[str, Any]:
             "current_todos": len(current_todos)
         }
     }
+
+
+# --- Chat title generation ---
+def generate_chat_title(session_id: str, force: bool = False) -> Dict[str, Any]:
+    """Generate and persist a concise chat title from recent conversation.
+
+    - Uses the local LLM first; falls back to a deterministic title if unavailable
+    - Persists the title to `chat_sessions.title` unless one already exists (unless force=True)
+    - Returns the chosen title and whether the LLM was used
+    """
+    if not session_id:
+        return {"ok": False, "error": "Session ID is required"}
+
+    try:
+        session = get_chat_session(session_id)
+    except Exception:
+        session = None
+
+    if session is None:
+        return {"ok": False, "error": "Session not found"}
+
+    existing_title = None
+    try:
+        existing_title = session["title"]
+    except Exception:
+        try:
+            existing_title = session.get("title")  # type: ignore
+        except Exception:
+            existing_title = None
+
+    if existing_title and not force:
+        return {"ok": True, "title": existing_title, "skipped": True}
+
+    messages = get_chat_messages(session_id, limit=40)
+    if not messages:
+        return {"ok": False, "error": "No chat history found for this session"}
+
+    snippets = _build_conversation_snippets(messages, max_messages=20)
+
+    system_prompt = CHAT_TITLE_SYSTEM_PROMPT
+    user_prompt = build_chat_title_user_prompt(snippets)
+
+    def _sanitize_title(text: str) -> str:
+        t = (text or "").strip()
+        if not t:
+            return ""
+        # Use only first line if multiple lines were returned
+        t = t.splitlines()[0]
+        # Remove surrounding quotes/backticks
+        if (t.startswith("\"") and t.endswith("\"")) or (t.startswith("'") and t.endswith("'")):
+            t = t[1:-1]
+        t = t.replace("`", "").strip()
+        # Collapse whitespace
+        t = " ".join(t.split())
+        # Trim length
+        if len(t) > 80:
+            t = t[:80].rstrip()
+        # Remove trailing punctuation that looks like a sentence
+        while t and t[-1] in ".!?;,:":
+            t = t[:-1]
+        return t.strip()
+
+    # Try LLM first (non-streaming for reliability here)
+    llm_text = _ask_llm_once_non_stream(system_prompt, user_prompt, temperature=0.2, allow_reasoning_fallback=False)
+
+    # Validate LLM title
+    def _valid(title: str) -> bool:
+        if not title or len(title.split()) < 2:
+            return False
+        lower = title.lower()
+        for bad in ("new chat", "conversation", "untitled", "no title"):
+            if lower == bad:
+                return False
+        return True
+
+    # Fallback: use first user message snippet
+    def _fallback_title() -> str:
+        try:
+            user_msgs = [m for m in messages if (m.get("role") if isinstance(m, dict) else m["role"]) == "user"]
+        except Exception:
+            user_msgs = messages
+        content = ""
+        for m in user_msgs:
+            try:
+                content = (m.get("content") or "").strip() if isinstance(m, dict) else (m["content"] or "").strip()
+            except Exception:
+                content = ""
+            if content:
+                break
+        if not content:
+            # Last resort generic title with small specificity
+            return "Chat Session"
+        # Use first sentence-ish or first 8 words
+        candidates = content.replace("\n", " ").split(". ")
+        first = candidates[0] if candidates else content
+        words = first.split()
+        short = " ".join(words[:8])
+        return _sanitize_title(short)
+
+    final_title = llm_text if _valid(llm_text) else _fallback_title()
+    if not _valid(final_title):
+        # As a last resort, use a simple two-word title
+        final_title = (final_title or "Chat Session").strip()
+
+    try:
+        update_chat_session_title(session_id, final_title)
+    except Exception:
+        return {"ok": False, "error": "Failed to persist title", "title": final_title}
+
+    return {"ok": True, "title": final_title, "llm_used": bool(llm_text)}
 
 
 # Tool schema definitions for OpenAI-style tool calling
@@ -642,6 +809,21 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "generate_chat_title",
+                "description": "Create and save a concise, descriptive chat title from recent conversation.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string", "description": "Current chat session ID"},
+                        "force": {"type": "boolean", "description": "Regenerate even if a title already exists", "default": False},
+                    },
+                    "required": ["session_id"],
+                },
+            },
+        },
     ]
 
 
@@ -654,6 +836,7 @@ FUNCTION_DISPATCH = {
     "derive_project_idea": lambda **kwargs: derive_project_idea(kwargs.get("session_id", "")),
     "create_tech_stack": lambda **kwargs: create_tech_stack(kwargs.get("session_id", "")),
     "summarize_chat_history": lambda **kwargs: summarize_chat_history(kwargs.get("session_id", "")),
+    "generate_chat_title": lambda **kwargs: generate_chat_title(kwargs.get("session_id", ""), force=bool(kwargs.get("force", False))),
 }
 
 

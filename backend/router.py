@@ -8,7 +8,7 @@ from tools import (
     get_tool_schemas, call_tool, list_todos, add_todo, clear_todos,
     update_todo, delete_todo,
     derive_project_idea, create_tech_stack, summarize_chat_history,
-    ask_llm_stream,
+    ask_llm_stream, generate_chat_title,
 )
 from models.db import (
     create_chat_session,
@@ -37,10 +37,14 @@ from PIL import Image
 import requests
 from models.db import add_rule_context, get_rules_rows
 import re
+from utils.text import strip_context_blocks
 from prompts import (
     PROJECT_IDEA_SYSTEM_PROMPT,
     TECH_STACK_SYSTEM_PROMPT,
     SUBMISSION_SUMMARY_SYSTEM_PROMPT,
+    build_project_idea_user_prompt,
+    build_tech_stack_user_prompt,
+    build_submission_summary_user_prompt,
 )
 from models.db import save_project_artifact
 
@@ -52,16 +56,7 @@ MAX_FILE_BYTES = 10 * 1024 * 1024  # 10MB limit per file
 ALLOWED_FILE_EXT = {'.txt', '.md', '.pdf', '.docx', '.doc', '.png', '.jpg', '.jpeg'}
 
 
-def strip_context_blocks(text: str) -> str:
-    if not text:
-        return text
-    # Remove [FILE:...]...[/FILE] blocks
-    cleaned = re.sub(r"\[FILE:[^\]]+\][\s\S]*?\[/FILE\]", "", text, flags=re.IGNORECASE)
-    # Remove [URL_TEXT]...[/URL_TEXT] blocks
-    cleaned = re.sub(r"\[URL_TEXT\][\s\S]*?\[/URL_TEXT\]", "", cleaned, flags=re.IGNORECASE)
-    # Collapse excessive blank lines and trim
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
-    return cleaned
+## moved to utils.text.strip_context_blocks
 
 def extract_text_from_file(file: UploadFile) -> str:
     filename = file.filename
@@ -193,6 +188,14 @@ async def chat_stream(
     user_content = "\n".join(context_parts + [user_input])
     saved_user_content = strip_context_blocks(user_content)
     add_chat_message(session_id, "user", saved_user_content, metadata)
+    # Background title generation if session has no title yet
+    try:
+        session_row = get_chat_session(session_id)
+        has_title = bool(session_row and (session_row["title"] or (hasattr(session_row, 'get') and session_row.get("title"))))
+        if not has_title:
+            threading.Thread(target=lambda: generate_chat_title(session_id), daemon=True).start()
+    except Exception:
+        pass
 
     # Retrieve relevant rule chunks (scoped to session)
     rule_hits = rag.retrieve(user_input, k=5)
@@ -295,6 +298,14 @@ async def chat_stream(
             if tool_calls_logged:
                 metadata["tool_calls"] = tool_calls_logged
             add_chat_message(session_id, "assistant", assistant_content, metadata if metadata else None)
+            # Attempt background title generation again in case the first attempt ran too early
+            try:
+                session_row2 = get_chat_session(session_id)
+                has_title2 = bool(session_row2 and (session_row2["title"] or (hasattr(session_row2, 'get') and session_row2.get("title"))))
+                if not has_title2:
+                    threading.Thread(target=lambda: generate_chat_title(session_id), daemon=True).start()
+            except Exception:
+                pass
 
         yield f"data: {json.dumps({'type': 'end'})}\n\n"
 
@@ -565,7 +576,7 @@ def derive_project_idea_route(session_id: str, stream: Optional[bool] = Query(Fa
             content = content[:217] + "..." if len(content) > 220 else content
             if content:
                 snippets.append(f"- {role}: {content}")
-        user_prompt = "Draft a concise project idea based on these messages.\n\n" + "\n".join(snippets)
+        user_prompt = build_project_idea_user_prompt(snippets)
 
         async def token_generator():
             final_parts: List[str] = []
@@ -623,7 +634,7 @@ def create_tech_stack_route(session_id: str, stream: Optional[bool] = Query(Fals
             content = content[:217] + "..." if len(content) > 220 else content
             if content:
                 snippets.append(f"- {role}: {content}")
-        user_prompt = "Create a recommended tech stack strictly from these messages.\n\n" + "\n".join(snippets)
+        user_prompt = build_tech_stack_user_prompt(snippets)
 
         async def token_generator():
             final_parts: List[str] = []
@@ -722,14 +733,11 @@ def summarize_chat_history_route(session_id: str, stream: Optional[bool] = Query
             content = content[:217] + "..." if len(content) > 220 else content
             if content:
                 snippets.append(f"- {role}: {content}")
-        up_lines: List[str] = []
-        if idea_art:
-            up_lines.append(f"Project Idea: {idea_art['content']}")
-        if stack_art:
-            up_lines.append(f"Tech Stack: {stack_art['content']}")
-        up_lines.append("Conversation (most recent first):")
-        up_lines.extend(snippets)
-        user_prompt = "\n".join(up_lines)
+        user_prompt = build_submission_summary_user_prompt(
+            snippets,
+            idea_art['content'] if idea_art else None,
+            stack_art['content'] if stack_art else None,
+        )
 
         async def token_generator():
             final_parts: List[str] = []

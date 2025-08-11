@@ -23,6 +23,44 @@ def build_hackathon_system_prompt(rule_text: str) -> str:
     - Cite rule chunk numbers in brackets if you refer to a specific rule."""
 
 
+CHAT_TITLE_SYSTEM_PROMPT = (
+    "You generate short, specific titles for chats.\n"
+    "Rules:\n"
+    "- 4 to 8 words, under 60 characters.\n"
+    "- No surrounding quotes or markdown.\n"
+    "- No trailing punctuation.\n"
+    "- Prefer Title Case.\n"
+    "- Capture the main purpose or deliverable."
+)
+
+
+def build_chat_title_user_prompt(snippets: list[str]) -> str:
+    return "Create a title for this conversation from the snippets below.\n\n" + "\n".join(snippets)
+
+
+def build_project_idea_user_prompt(snippets: list[str]) -> str:
+    return "Draft a concise project idea based on these messages.\n\n" + "\n".join(snippets)
+
+
+def build_tech_stack_user_prompt(snippets: list[str]) -> str:
+    return "Create a recommended tech stack strictly from these messages.\n\n" + "\n".join(snippets)
+
+
+def build_submission_summary_user_prompt(
+    snippets: list[str],
+    project_idea: str | None = None,
+    tech_stack: str | None = None,
+) -> str:
+    lines: list[str] = []
+    if project_idea:
+        lines.append(f"Project Idea: {project_idea}")
+    if tech_stack:
+        lines.append(f"Tech Stack: {tech_stack}")
+    lines.append("Conversation (most recent first):")
+    lines.extend(snippets)
+    return "\n".join(lines)
+
+
 TECH_STACK_SYSTEM_PROMPT = (
     "You are a senior software architect. Based on the conversation, "
     "produce a concise recommended tech stack for a hackathon project. "
