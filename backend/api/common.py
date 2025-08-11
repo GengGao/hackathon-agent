@@ -7,6 +7,9 @@ import docx  # type: ignore
 import pdfminer.high_level  # type: ignore
 import pytesseract  # type: ignore
 from PIL import Image  # type: ignore
+import re
+from html import unescape
+from html.parser import HTMLParser
 
 from rag import RuleRAG
 
@@ -47,20 +50,155 @@ def extract_text_from_file(file: UploadFile) -> str:
         return f"[Failed to process {filename}: {e}]"
 
 
+class _BodyTextHTMLParser(HTMLParser):
+    """Extract visible text from the HTML body, ignoring scripts/styles.
+
+    Keeps simple structure hints by injecting newlines around common block-level tags.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.in_body: bool = False
+        self.suppressed_depth: int = 0  # inside <script>/<style>/<noscript>
+        self.chunks: List[str] = []
+        self.seen_body: bool = False
+
+    def handle_starttag(self, tag: str, attrs):  # type: ignore[override]
+        tag_lower = tag.lower()
+        if tag_lower == "body":
+            self.in_body = True
+            self.seen_body = True
+            return
+        if not self.in_body:
+            return
+        if tag_lower in ("script", "style", "noscript"):
+            self.suppressed_depth += 1
+            return
+        if tag_lower in ("br",):
+            self.chunks.append("\n")
+            return
+        if tag_lower in (
+            "p",
+            "div",
+            "section",
+            "header",
+            "footer",
+            "article",
+            "li",
+            "ul",
+            "ol",
+            "table",
+            "thead",
+            "tbody",
+            "tr",
+            "td",
+            "th",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "pre",
+        ):
+            self.chunks.append("\n")
+
+    def handle_endtag(self, tag: str):  # type: ignore[override]
+        tag_lower = tag.lower()
+        if tag_lower == "body":
+            self.in_body = False
+            return
+        if not self.in_body:
+            return
+        if tag_lower in ("script", "style", "noscript"):
+            if self.suppressed_depth > 0:
+                self.suppressed_depth -= 1
+            return
+        if tag_lower in (
+            "p",
+            "div",
+            "section",
+            "header",
+            "footer",
+            "article",
+            "li",
+            "ul",
+            "ol",
+            "table",
+            "thead",
+            "tbody",
+            "tr",
+            "td",
+            "th",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "pre",
+        ):
+            self.chunks.append("\n")
+
+    def handle_data(self, data: str):  # type: ignore[override]
+        if not self.in_body or self.suppressed_depth > 0:
+            return
+        if not data or not data.strip():
+            return
+        self.chunks.append(data)
+
+
+def extract_visible_text_from_html(html_text: str) -> str:
+    """Return human-visible text from the <body> of an HTML document.
+
+    Falls back to stripping head/script/style tags if no explicit <body> exists.
+    """
+    if not html_text:
+        return ""
+
+    parser = _BodyTextHTMLParser()
+    parser.feed(html_text)
+    body_text = "".join(parser.chunks).strip()
+
+    if not parser.seen_body:
+        # Fallback: strip obvious non-visible sections and tags
+        cleaned = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\\1>", " ", html_text)
+        cleaned = re.sub(r"(?is)<head[^>]*>.*?</head>", " ", cleaned)
+        cleaned = re.sub(r"(?is)<[^>]+>", " ", cleaned)
+        body_text = cleaned
+
+    text = unescape(body_text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\xa0", " ")
+    text = re.sub(r"[ \t\f\v]+", " ", text)
+    text = re.sub(r"\n[ \t]*\n+", "\n\n", text)
+    return text.strip()
+
+
 def build_url_block(url: str, *, timeout: int = 5, max_bytes: int = 100_000) -> str:
     import requests
 
     try:
         resp = requests.get(url, timeout=timeout, stream=True)
         ctype = resp.headers.get("Content-Type", "")
+        content_bytes = resp.content[:max_bytes]
+        is_truncated = len(resp.content) > max_bytes
+
         if "text" not in ctype.lower():
             snippet = f"[Blocked non-text content-type {ctype}]"
         else:
-            content_bytes = resp.content[:max_bytes]
-            if len(resp.content) > max_bytes:
-                snippet = content_bytes.decode("utf-8", errors="ignore") + "\n[Truncated]"
+            if "html" in ctype.lower():
+                try:
+                    html_text = content_bytes.decode("utf-8", errors="ignore")
+                    visible = extract_visible_text_from_html(html_text)
+                    snippet = visible + ("\n[Truncated]" if is_truncated else "")
+                except Exception as e:  # pragma: no cover - best-effort HTML parsing
+                    snippet = f"[Failed HTML parse: {e}]"
             else:
                 snippet = content_bytes.decode("utf-8", errors="ignore")
+                if is_truncated:
+                    snippet += "\n[Truncated]"
+
         return f"[URL:{url}]\n{snippet}\n[/URL]"
     except Exception as e:
         return f"[URL_FETCH_FAILED:{url}]\nError: {e}"

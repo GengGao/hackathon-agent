@@ -16,7 +16,7 @@ from models.db import (
     get_chat_messages,
 )
 from utils.text import strip_context_blocks
-from .common import rag, extract_text_from_file
+from .common import rag, extract_text_from_file, build_url_block
 
 
 router = APIRouter()
@@ -61,27 +61,10 @@ async def chat_stream(
         metadata["files"] = file_meta
 
     if url_text:
-        # Duplicated inline to preserve exact behavior from original router
-        import requests
-
         if url_text.startswith(("http://", "https://")):
-            try:
-                resp = requests.get(url_text, timeout=5, stream=True)
-                ctype = resp.headers.get("Content-Type", "")
-                if "text" not in ctype.lower():
-                    snippet = f"[Blocked non-text content-type {ctype}]"
-                else:
-                    content_bytes = resp.content[:100_000]
-                    if len(resp.content) > 100_000:
-                        snippet = content_bytes.decode("utf-8", errors="ignore") + "\n[Truncated]"
-                    else:
-                        snippet = content_bytes.decode("utf-8", errors="ignore")
-                metadata["url"] = url_text
-                context_parts.append(f"[URL:{url_text}]\n{snippet}\n[/URL]")
-            except Exception as e:
-                err = f"[Failed to fetch URL: {e}]"
-                context_parts.append(err)
-                metadata["url_error"] = str(e)
+            block = build_url_block(url_text)
+            metadata["url"] = url_text
+            context_parts.append(block)
         else:
             metadata["url_text"] = url_text[:100] + "..." if len(url_text) > 100 else url_text
             context_parts.append(f"[URL_TEXT]\n{url_text}\n[/URL_TEXT]")
