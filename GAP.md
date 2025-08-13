@@ -30,7 +30,7 @@ Status: planned | in_progress | done | deferred
 | G-008 | P1 | deferred | Perf | Model benchmark script (latency/tokens/sec/memory) |
 | G-009 | P1 | deferred | Memory | Rolling chat summarization to cap prompt size |
 | G-010 | P2 | deferred | Retrieval | Token-aware/semantic chunking with overlap |
-| G-011 | P2 | deferred | Retrieval | Score normalization or rerank experiment |
+| G-011 | P2 | deferred | Retrieval | Score normalization or re-rank experiment |
 | G-012 | P2 | done | Tooling | Multi-round tool planning loop controller |
 | G-013 | P2 | deferred | DB | WAL mode + maintenance guidance |
 | G-014 | P3 | done    | Offline UX | PWA app shell using vite-plugin-pwa |

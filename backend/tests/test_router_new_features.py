@@ -91,6 +91,7 @@ def test_multi_file_ingestion_and_tool_calls(client: TestClient, monkeypatch):
     session_id = None
     tool_calls_seen = False
     content_seen = False
+    # print("Starting stream")
 
     with client.stream("POST", "/api/chat-stream", data=data, files=files) as r:
         assert r.status_code == 200
