@@ -15,6 +15,8 @@ from rag import RuleRAG
 import shutil
 import os
 from typing import Optional
+import requests
+from requests.exceptions import TooManyRedirects, RequestException
 
 
 # Shared RAG instance (scoped per-session by callers)
@@ -211,33 +213,93 @@ def extract_visible_text_from_html(html_text: str) -> str:
     return text.strip()
 
 
-def build_url_block(url: str, *, timeout: int = 5, max_bytes: int = 100_000) -> str:
-    import requests
+def build_url_block(url: str, *, timeout: int = 5, max_bytes: int = 100_000, max_redirects: int = 3) -> str:
+    # Allow only human-readable text types
+    def _is_allowed_mime(ctype_raw: str) -> bool:
+        if not ctype_raw:
+            return False
+        ctype = ctype_raw.split(";", 1)[0].strip().lower()
+        if ctype.startswith("text/"):
+            return True
+        # Allow XHTML explicitly (served as application/xhtml+xml)
+        if ctype in {"application/xhtml+xml"}:
+            return True
+        return False
 
+    session = requests.Session()
+    session.max_redirects = max_redirects
+
+    # HEAD size/mime guard
     try:
-        resp = requests.get(url, timeout=timeout, stream=True)
-        ctype = resp.headers.get("Content-Type", "")
-        content_bytes = resp.content[:max_bytes]
-        is_truncated = len(resp.content) > max_bytes
+        head_resp = session.head(url, timeout=timeout, allow_redirects=True)
+        head_ctype = head_resp.headers.get("Content-Type", "")
+        if not _is_allowed_mime(head_ctype):
+            return f"[URL:{url}]\n[Blocked non-text content-type {head_ctype}]\n[/URL]"
+        clen = head_resp.headers.get("Content-Length")
+        if clen is not None:
+            try:
+                size_int = int(clen)
+                if size_int > max_bytes:
+                    return f"[URL:{url}]\n[Blocked: content-length {size_int} exceeds limit {max_bytes}]\n[/URL]"
+            except ValueError:
+                # Ignore invalid content-length and proceed to GET with streaming limits
+                pass
+    except TooManyRedirects:
+        return f"[URL_FETCH_FAILED:{url}]\nError: too many redirects (> {max_redirects})"
+    except Exception:
+        # If HEAD fails (405 or network), proceed to GET with streaming safeguards
+        pass
 
-        if "text" not in ctype.lower():
-            snippet = f"[Blocked non-text content-type {ctype}]"
+    # GET with streaming and hard byte cap; avoid buffering full response
+    resp = None
+    try:
+        resp = session.get(url, timeout=timeout, stream=True, allow_redirects=True)
+        ctype = resp.headers.get("Content-Type", "")
+        if not _is_allowed_mime(ctype):
+            return f"[URL:{url}]\n[Blocked non-text content-type {ctype}]\n[/URL]"
+
+        total = 0
+        chunks = []
+        for chunk in resp.iter_content(chunk_size=8192):
+            if not chunk:
+                continue
+            chunks.append(chunk)
+            total += len(chunk)
+            if total >= max_bytes:
+                break
+
+        content_bytes = b"".join(chunks)
+        is_truncated = total >= max_bytes or False
+        if len(content_bytes) > max_bytes:
+            content_bytes = content_bytes[:max_bytes]
+            is_truncated = True
+
+        lower_ctype = ctype.split(";", 1)[0].strip().lower()
+        if "html" in lower_ctype:
+            try:
+                html_text = content_bytes.decode("utf-8", errors="ignore")
+                visible = extract_visible_text_from_html(html_text)
+                snippet = visible + ("\n[Truncated]" if is_truncated else "")
+            except Exception as e:  # pragma: no cover - best-effort HTML parsing
+                snippet = f"[Failed HTML parse: {e}]"
         else:
-            if "html" in ctype.lower():
-                try:
-                    html_text = content_bytes.decode("utf-8", errors="ignore")
-                    visible = extract_visible_text_from_html(html_text)
-                    snippet = visible + ("\n[Truncated]" if is_truncated else "")
-                except Exception as e:  # pragma: no cover - best-effort HTML parsing
-                    snippet = f"[Failed HTML parse: {e}]"
-            else:
-                snippet = content_bytes.decode("utf-8", errors="ignore")
-                if is_truncated:
-                    snippet += "\n[Truncated]"
+            snippet = content_bytes.decode("utf-8", errors="ignore")
+            if is_truncated:
+                snippet += "\n[Truncated]"
 
         return f"[URL:{url}]\n{snippet}\n[/URL]"
+    except TooManyRedirects:
+        return f"[URL_FETCH_FAILED:{url}]\nError: too many redirects (> {max_redirects})"
+    except RequestException as e:
+        return f"[URL_FETCH_FAILED:{url}]\nError: {e}"
     except Exception as e:
         return f"[URL_FETCH_FAILED:{url}]\nError: {e}"
+    finally:
+        try:
+            if resp is not None:
+                resp.close()
+        finally:
+            session.close()
 
 
 def get_generate_stream():

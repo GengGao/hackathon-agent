@@ -24,7 +24,7 @@ Status: planned | in_progress | done | deferred
 | G-002 | P0 | done | RAG | Embedding cache persistence keyed by rules hash |
 | G-003 | P0 | deferred | Stability | SSE stream ordering test (thinking/tool_calls/token/end) |
 | G-004 | P1 | deferred | Observability | JSON logs + minimal `/api/health` counters |
-| G-005 | P1 | deferred | Security | Harden URL ingestion (redirect cap, stricter mime) |
+| G-005 | P1 | done | Security | Harden URL ingestion (redirect cap, stricter mime) |
 | G-006 | P1 | deferred | UI | Rule chunk highlight and mapping in answers |
 | G-007 | P1 | deferred | UI | Artifact management panel (list/view/download) |
 | G-008 | P1 | deferred | Perf | Model benchmark script (latency/tokens/sec/memory) |
@@ -54,7 +54,7 @@ Note: Basic streaming test exists; add explicit ordering assertions across frame
 Structured logs per stream; `/api/health` returns uptime, served_requests.
 
 #### G-005 – URL Ingestion Hardening (P1)
-Baseline guards exist (text-only content types and max snippet length). Remaining: add redirect cap (≤3), HEAD size guard, stricter MIME allowlist, and avoid buffering full response into memory. Tests should simulate blocked binary and oversize responses.
+Now enforces: redirect cap (≤3), HEAD size/mime guard, stricter MIME allowlist (text/*, application/xhtml+xml), and streams up to a byte cap without buffering the full response. Tests cover blocked binary, oversize responses, XHTML allow, and redirect loops.
 
 #### G-006 – Rule Chunk Highlight (P1)
 Current: UI shows a separate "Referenced rules" list using chunk texts. Target: emit stable chunk IDs in SSE and render inline refs like [R3] with side panel mapping.
@@ -95,6 +95,7 @@ Acceptance: When the backend emits `tool_calls` and later the assistant message 
 ### Closed
 - G-001:  Submission ZIP pack
 - G-002: Embedding cache persistence keyed by rules hash
+- G-005: URL Ingestion Hardening
 - G-012: Multi-round tool planning loop
 - G-014: PWA offline app shell (vite-plugin-pwa, manifest, runtime caching)
 

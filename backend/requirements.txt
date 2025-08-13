@@ -11,3 +11,4 @@ Pillow
 openai
 numpy
 pytest
+requests
