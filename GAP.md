@@ -32,7 +32,7 @@ Status: planned | in_progress | done | deferred
 | G-010 | P1 | planned | Memory | Rolling chat summarization to cap prompt size |
 | G-011 | P2 | planned | Retrieval | Token-aware/semantic chunking with overlap |
 | G-012 | P2 | planned | Retrieval | Score normalization or rerank experiment |
-| G-013 | P2 | planned | Tooling | Multi-round tool planning loop controller |
+| G-013 | P2 | in_progress | Tooling | Multi-round tool planning loop controller |
 | G-014 | P2 | planned | DB | WAL mode + maintenance guidance |
 | G-015 | P3 | done    | Offline UX | PWA app shell using vite-plugin-pwa |
 | G-016 | P3 | deferred| Security | Basic auth + rate limit (local-first, defer) |
@@ -49,23 +49,24 @@ Endpoint: `GET /api/chat-sessions/{id}/artifact/{type}.md` streamed with `Conten
 Acceptance: 200 when exists; 404 otherwise; unit tests.
 
 #### G-003 – Embedding Cache (P0)
-Implemented cache under `backend/data/rag_cache/<rules_hash>/` storing `chunks.json`, `meta.json`, and `embeddings.npy`. On rebuild (non-forced), attempts to load cache before recomputing; warm start uses cached FAISS index.
-Acceptance (remaining): warm start <300ms for ~1k chunks; add unit test verifying reuse on unchanged rules.
+Implemented cache under `backend/data/rag_cache/<rules_hash>/` storing `chunks.json`, `meta.json`, and `embeddings.npy`. On rebuild (non-forced), attempts to load cache before recomputing; warm start uses cached FAISS index. Session scoping resets the rules hash when `session_id` changes to avoid cross-session leakage.
+Acceptance (remaining): warm start <300ms for ~1k chunks; add unit test verifying cache reuse when rules unchanged; document behavior in README.
 
 #### G-004 – SSE Ordering Test (P0)
 Deterministic integration test ensuring order: `session_info` → `rule_chunks` → (`thinking`/`tool_calls`)* → `token` → `end`.
+Note: Basic streaming test exists; add explicit ordering assertions across frames.
 
 #### G-005 – JSON Logs + Health (P1)
 Structured logs per stream; `/api/health` returns uptime, served_requests.
 
 #### G-006 – URL Ingestion Hardening (P1)
-Add redirect cap (≤3), HEAD size guard, strict allowlist for text types. Tests simulate blocked binary.
+Baseline guards exist (text-only content types and max snippet length). Remaining: add redirect cap (≤3), HEAD size guard, stricter MIME allowlist, and avoid buffering full response into memory. Tests should simulate blocked binary and oversize responses.
 
 #### G-007 – Rule Chunk Highlight (P1)
-Expose chunk ids in SSE; render inline refs like [R3] with side panel mapping.
+Current: UI shows a separate "Referenced rules" list using chunk texts. Target: emit stable chunk IDs in SSE and render inline refs like [R3] with side panel mapping.
 
 #### G-008 – Artifact Panel (P1)
-List session artifacts with copy/download; refresh after create.
+Current: Dashboard lists and generates artifacts; backend exposes `GET /api/chat-sessions/{id}/project-artifacts` and `GET /api/chat-sessions/{id}/project-artifacts/{type}`. Target: add copy/download actions in UI and stream/download endpoints for individual artifacts.
 
 #### G-009 – Model Benchmarks (P1)
 `scripts/benchmark_models.py` stores results to `data/benchmarks/*.json` and updates README table.
@@ -80,7 +81,8 @@ Sentence segmentation + token window with overlap.
 Experiment with length-normalization or cross-encoder rerank.
 
 #### G-013 – Tool Planning Loop (P2)
-Allow iterative tool calls before finalizing assistant turn.
+Current: Streaming loop supports multiple tool-call rounds with guards; emits `tool_calls` frames and continues until content or max rounds.
+Acceptance: add multi-round integration test (≥2 rounds), document termination conditions, ensure UI stability across rounds.
 
 #### G-014 – SQLite WAL (P2)
 Enable WAL; document `VACUUM`/`ANALYZE` cadence; concurrency test.

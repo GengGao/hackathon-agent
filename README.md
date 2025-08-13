@@ -19,7 +19,7 @@ Hackathon teams lose disproportionate time structuring ideas, tracking progress,
 ---
 ## 2. What It Does (Feature Summary)
 - 🔁 **Streaming Local LLM** (gpt-oss via Ollama) with thinking + tool call transparency (SSE)
-- 📜 **Rules-Aware RAG**: chunk + embed rulebook; retrieve top‑k context per query
+- 📜 **Rules-Aware RAG**: chunk + embed rulebook; retrieve top‑k context per query; cached embeddings for warm starts
 - ✅ **Intelligent Todo System**: status cycle (pending → in_progress → done), priorities, agent adds tasks via function calls
 - 🧠 **Artifact Generation**: derive project idea, recommended tech stack, submission summary from chat history
 - 📎 **Multi-File & URL Text Ingestion**: txt / md / pdf / docx / images (OCR) with size & extension guards
@@ -61,7 +61,7 @@ Planned (near term): export submission pack ZIP; code scaffold tool; auto summar
 
 ---
 ## 5. Local Model & Embeddings
-- Default LLM: `gpt-oss:20b` (can switch to `gpt-oss:120b` if installed)
+- Default LLM: `gpt-oss:20b` (switchable to other installed `gpt-oss:*` models)
 - Embedding model: `all-MiniLM-L6-v2` (downloaded once; cached locally)
 - No remote OpenAI calls: `AsyncOpenAI` base URL is loopback → Ollama
 
@@ -122,13 +122,15 @@ Frontend default: http://localhost:5173
 ## 8. Tooling (Function Calls)
 | Tool | Purpose | Args |
 |------|---------|------|
-| `list_todos` | Retrieve current tasks | – |
-| `add_todo` | Add a task | item |
-| `clear_todos` | Remove tasks | – |
+| `get_session_id` | Returns active session id | session_id? |
+| `list_todos` | Retrieve current tasks | session_id? |
+| `add_todo` | Add a task | item, session_id |
+| `clear_todos` | Remove tasks for a session | session_id |
 | `list_directory` | Safe project dir listing | path? |
 | `derive_project_idea` | Create idea artifact | session_id |
 | `create_tech_stack` | Create tech stack artifact | session_id |
 | `summarize_chat_history` | Submission summary | session_id |
+| `generate_chat_title` | Auto title the session | session_id, force? |
 
 Planned: `export_submission_pack`, `scaffold_code`, `auto_summarize`.
 
@@ -138,9 +140,9 @@ Current:
 - Chunking: split on blank-line groups
 - Index: FAISS cosine (normalized MiniLM embeddings via IndexFlatIP)
 - Query: top‑k=5 similarities (higher = more relevant) returned
+- Caching: embeddings, chunks, and metadata persisted under `backend/data/rag_cache/<rules_hash>/` for warm starts; session-aware scoping
 
 Planned improvements:
-- Serialize / cache embeddings for faster startup
 - Rule chunk highlighting in UI
 
 ---
@@ -181,7 +183,7 @@ See [GAP.md](./GAP.md) for full prioritized list (P0→P3). Immediate targets:
 - [ ] Submission pack export
 - [ ] Artifact download endpoints
 - [ ] Model benchmarking script
-- [ ] Embedding cache
+- [ ] Embedding cache (tests + perf targets)
 
 ---
 ## 14. Devpost Submission Checklist
@@ -253,24 +255,27 @@ Add handle(s) here.
 ## 22. Appendix (API Snapshot)
 | Method & Path | Purpose |
 |--------------|---------|
-| POST `/api/chat-stream` | Stream chat (SSE) with `thinking`, `tool_calls`, `token`, `end` |
-| GET `/api/todos` | List todos (`?detailed=true`) |
-| POST `/api/todos` | Add todo (form `item`) |
-| PUT `/api/todos/{id}` | Update fields (item/status/sort_order) |
-| DELETE `/api/todos/{id}` | Delete one |
-| DELETE `/api/todos` | Clear all |
+| POST `/api/chat-stream` | Stream chat (SSE): `session_info` → `rule_chunks` → (`thinking`/`tool_calls`)* → `token` → `end` |
+| GET `/api/todos` | List todos (`?detailed=true`, `?session_id=`) |
+| POST `/api/todos` | Add todo (form `item`, optional `session_id`) |
+| PUT `/api/todos/{id}` | Update fields (item/status/sort_order/session_id) |
+| DELETE `/api/todos/{id}` | Delete one (`?session_id=` optional) |
+| DELETE `/api/todos` | Clear all for a session (`?session_id=` required) |
 | POST `/api/context/rules` | Upload rules/content file (optional `session_id`) |
-| GET `/api/chat-sessions` | List sessions (limit/offset) |
-| GET `/api/chat-sessions/{id}` | Session detail & messages |
-| PUT `/api/chat-sessions/{id}/title` | Rename session |
-| DELETE `/api/chat-sessions/{id}` | Delete session |
-| POST `/api/chat-sessions/{id}/derive-project-idea` | Generate & store idea |
-| POST `/api/chat-sessions/{id}/create-tech-stack` | Generate & store tech stack |
-| POST `/api/chat-sessions/{id}/summarize-chat-history` | Generate & store submission summary |
 | POST `/api/context/add-text` | Add pasted text or fetched URL snippet (optional `session_id`) |
 | GET `/api/context/status` | RAG status (accepts `session_id` query) |
 | GET `/api/context/list` | List context rows (accepts `session_id` query) |
+| GET `/api/chat-sessions` | List sessions (limit/offset) |
+| GET `/api/chat-sessions/{id}` | Session detail & messages (limit/offset) |
+| PUT `/api/chat-sessions/{id}/title` | Rename session |
+| DELETE `/api/chat-sessions/{id}` | Delete session |
+| GET `/api/chat-sessions/{id}/project-artifacts` | List artifacts for session |
+| GET `/api/chat-sessions/{id}/project-artifacts/{type}` | Get specific artifact |
+| POST `/api/chat-sessions/{id}/derive-project-idea` | Generate & store idea |
+| POST `/api/chat-sessions/{id}/create-tech-stack` | Generate & store tech stack |
+| POST `/api/chat-sessions/{id}/summarize-chat-history` | Generate & store submission summary |
 | GET `/api/ollama/status` | Model & availability |
+| GET `/api/ollama/model` | Get current model |
 | POST `/api/ollama/model` | Switch active model |
 
 ---
