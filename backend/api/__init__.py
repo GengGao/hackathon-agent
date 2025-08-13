@@ -7,6 +7,7 @@ from .todos import router as todos_router  # noqa: F401
 from .sessions import router as sessions_router  # noqa: F401
 from .ollama import router as ollama_router  # noqa: F401
 from .artifacts import router as artifacts_router  # noqa: F401
+from .export import router as export_router  # noqa: F401
 
 __all__ = [
     "APIRouter",
@@ -16,6 +17,7 @@ __all__ = [
     "sessions_router",
     "ollama_router",
     "artifacts_router",
+    "export_router",
 ]
 
 

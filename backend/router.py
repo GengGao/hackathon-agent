@@ -11,6 +11,7 @@ from api import (
     sessions_router,
     ollama_router,
     artifacts_router,
+    export_router,
 )
 
 
@@ -23,5 +24,6 @@ router.include_router(todos_router)
 router.include_router(sessions_router)
 router.include_router(ollama_router)
 router.include_router(artifacts_router)
+router.include_router(export_router)
 
 

@@ -74,7 +74,7 @@ Planned (near term): export submission pack ZIP; code scaffold tool; auto summar
   - macOS: `brew install tesseract`
   - Ubuntu/Debian: `sudo apt-get update && sudo apt-get install -y tesseract-ocr`
   - Windows (Chocolatey): `choco install tesseract`
-- [Ollama](https://ollama.com) installed
+- [Ollama](https://ollama.com) installed and running
 - Pull at least one gpt-oss model:
 ```bash
 ollama pull gpt-oss:20b
@@ -88,7 +88,7 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-python -c "from models.db import init_db; init_db()"  # run migrations
+python -c "from models.db import init_db; init_db()"  # run migrations (idempotent)
 uvicorn main:app --reload
 ```
 Backend default: http://localhost:8000 (API under `/api`)
@@ -107,10 +107,12 @@ Frontend default: http://localhost:5173
 | `HACKATHON_DB_PATH` | Custom SQLite path | `backend/data/app.db` |
 | `DEBUG_STREAM` | Verbose chunk logging | `0` |
 
+Models and embeddings download once and are cached locally. If Ollama is not available, model list falls back to `gpt-oss:20b`, `gpt-oss:120b` until Ollama is reachable.
+
 ---
 ## 7. Usage Flow
 1. Start Ollama + backend + frontend.
-2. Add context: upload files or paste text/URLs in the left panel (calls `/api/context/*`).
+2. Add context: upload files or paste text/URLs in the left panel (calls `/api/context/*`). Index status appears live; chat is gated until RAG is ready.
 3. Chat: brainstorm; agent may propose/add todos via tool calls.
 4. Generate artifacts:
    - `POST /api/chat-sessions/{id}/derive-project-idea`
@@ -184,6 +186,7 @@ See [GAP.md](./GAP.md) for full prioritized list (P0→P3). Immediate targets:
 - [ ] Artifact download endpoints
 - [ ] Model benchmarking script
 - [ ] Embedding cache (tests + perf targets)
+ - [ ] Tool call results displayed inline in UI
 
 ---
 ## 14. Devpost Submission Checklist
@@ -274,6 +277,7 @@ Add handle(s) here.
 | POST `/api/chat-sessions/{id}/derive-project-idea` | Generate & store idea |
 | POST `/api/chat-sessions/{id}/create-tech-stack` | Generate & store tech stack |
 | POST `/api/chat-sessions/{id}/summarize-chat-history` | Generate & store submission summary |
+| POST `/api/export/submission-pack` | Download ZIP of idea.md, tech_stack.md, summary.md, todos.json, rules_ingested.txt, session_metadata.json (requires `session_id` query) |
 | GET `/api/ollama/status` | Model & availability |
 | GET `/api/ollama/model` | Get current model |
 | POST `/api/ollama/model` | Switch active model |

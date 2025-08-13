@@ -15,6 +15,44 @@ export default function ProjectDashboard({
 	currentSessionId,
 	todosRefreshKey,
 }) {
+	const handleDownloadPack = async () => {
+		if (!currentSessionId) {
+			alert("Please start a chat session first");
+			return;
+		}
+		try {
+			const url = new URL(
+				"/api/export/submission-pack",
+				window.location.origin,
+			);
+			url.searchParams.set("session_id", currentSessionId);
+			const res = await fetch(url.toString(), { method: "POST" });
+			if (!res.ok) {
+				const msg = await res.text().catch(() => "");
+				let userMsg = "Failed to download submission pack";
+				let parsed = null;
+				try {
+					parsed = JSON.parse(msg);
+				} catch {
+					parsed = null;
+				}
+				if (parsed?.error) userMsg = parsed.error;
+				throw new Error(userMsg);
+			}
+			const blob = await res.blob();
+			const a = document.createElement("a");
+			const objectUrl = URL.createObjectURL(blob);
+			a.href = objectUrl;
+			a.download = `submission_pack_${currentSessionId?.slice(0, 8) ?? "session"}.zip`;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+		} catch (e) {
+			console.error("Failed to download pack", e);
+			alert(e?.message || "Failed to download submission pack");
+		}
+	};
 	return (
 		<div className="w-full lg:w-1/4 h-full min-h-0 glass-effect-readable rounded-xl shadow-xl flex flex-col overflow-hidden float-animation">
 			<div className="section-header shrink-0">
@@ -22,6 +60,16 @@ export default function ProjectDashboard({
 					<i className="fas fa-gauge mr-2 text-purple-500" />
 					Project Dashboard
 				</h2>
+				<button
+					onClick={handleDownloadPack}
+					className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded transition-colors"
+					title="Export submission pack (ZIP)"
+					type="button"
+					aria-label="Export submission pack"
+				>
+					<i className="fas fa-download mr-1" />
+					Export
+				</button>
 			</div>
 			<div className="flex-1 min-h-0 overflow-y-auto p-3">
 				<div className="space-y-4 text-sm">
@@ -42,11 +90,11 @@ export default function ProjectDashboard({
 							</button>
 						</div>
 						<p className="text-readable-light italic">
-							{isStreamingIdea && !dashboardData.idea ? (
+							{isStreamingIdea && !dashboardData?.idea ? (
 								<SkeletonText lines={4} />
 							) : (
 								<ReactMarkdown remarkPlugins={[remarkGfm]}>
-									{dashboardData.idea}
+									{dashboardData?.idea}
 								</ReactMarkdown>
 							)}
 						</p>
@@ -69,11 +117,11 @@ export default function ProjectDashboard({
 							</button>
 						</div>
 						<p className="text-readable-light italic">
-							{isStreamingStack && !dashboardData.stack ? (
+							{isStreamingStack && !dashboardData?.stack ? (
 								<SkeletonText lines={4} />
 							) : (
 								<ReactMarkdown remarkPlugins={[remarkGfm]}>
-									{dashboardData.stack}
+									{dashboardData?.stack}
 								</ReactMarkdown>
 							)}
 						</p>
@@ -107,11 +155,11 @@ export default function ProjectDashboard({
 							</button>
 						</div>
 						<p className="text-readable-light italic">
-							{isStreamingSummary && !dashboardData.submission ? (
+							{isStreamingSummary && !dashboardData?.submission ? (
 								<SkeletonText lines={6} />
 							) : (
 								<ReactMarkdown remarkPlugins={[remarkGfm]}>
-									{dashboardData.submission}
+									{dashboardData?.submission}
 								</ReactMarkdown>
 							)}
 						</p>
