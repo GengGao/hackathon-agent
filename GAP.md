@@ -14,7 +14,7 @@ Status: planned | in_progress | done | deferred
 ### Snapshot
 - Total gaps: 16
 - P0: 3 | P1: 6 | P2: 4 | P3: 3
-- Closed (done): 3
+- Closed (done): 6
 
 ---
 ### Gap Table (condensed)
@@ -22,7 +22,7 @@ Status: planned | in_progress | done | deferred
 |----|---|--------|------|---------|
 | G-001 | P0 | done | Export | Submission ZIP pack (artifacts + todos + rules) |
 | G-002 | P0 | done | RAG | Embedding cache persistence keyed by rules hash |
-| G-003 | P0 | deferred | Stability | SSE stream ordering test (thinking/tool_calls/token/end) |
+| G-003 | P0 | done | Stability | SSE stream ordering test (thinking/tool_calls/token/end) |
 | G-004 | P1 | deferred | Observability | JSON logs + minimal `/api/health` counters |
 | G-005 | P1 | done | Security | Harden URL ingestion (redirect cap, stricter mime) |
 | G-006 | P1 | deferred | UI | Rule chunk highlight and mapping in answers |
@@ -47,8 +47,8 @@ Endpoint: `POST /api/export/submission-pack` → ZIP of `idea.md`, `tech_stack.m
 Implemented cache under `backend/data/rag_cache/<rules_hash>/` storing `chunks.json`, `meta.json`, and `embeddings.npy`. On rebuild (non-forced), attempts to load cache before recomputing; warm start uses cached FAISS index. Session scoping resets the rules hash when `session_id` changes to avoid cross-session leakage.
 
 #### G-003 – SSE Ordering Test (P0)
-Deterministic integration test ensuring order: `session_info` → `rule_chunks` → (`thinking`/`tool_calls`)* → `token` → `end`.
-Note: Basic streaming test exists; add explicit ordering assertions across frames.
+Done. Deterministic integration test ensures order: `session_info` → `rule_chunks` → (`thinking`/`tool_calls`)* → `token` → `end`.
+Implemented in `backend/tests/test_router_new_features.py::test_chat_sse_event_ordering`.
 
 #### G-004 – JSON Logs + Health (P1)
 Structured logs per stream; `/api/health` returns uptime, served_requests.
@@ -95,6 +95,7 @@ Acceptance: When the backend emits `tool_calls` and later the assistant message 
 ### Closed
 - G-001:  Submission ZIP pack
 - G-002: Embedding cache persistence keyed by rules hash
+- G-003: SSE ordering test
 - G-005: URL Ingestion Hardening
 - G-012: Multi-round tool planning loop
 - G-014: PWA offline app shell (vite-plugin-pwa, manifest, runtime caching)

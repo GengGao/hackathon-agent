@@ -136,3 +136,58 @@ def test_url_text_plain_passthrough(client: TestClient, monkeypatch):
 
     resp = client.post("/api/chat-stream", data={"user_input": "Hi", "url_text": "just some notes"})
     assert resp.status_code == 200
+
+
+def test_chat_sse_event_ordering(client: TestClient, monkeypatch):
+    """Ensure SSE events follow the required order:
+    session_info → rule_chunks → (thinking/tool_calls)* → token → end
+    """
+    import router as router_module
+
+    async def fake_stream(prompt: str, **kwargs):
+        # Middle phase may include multiple thinking/tool_calls in any order
+        yield {"type": "thinking", "content": "Reasoning step 1"}
+        yield {
+            "type": "tool_calls",
+            "tool_calls": [
+                {"id": "call_1", "name": "list_todos", "arguments": "{}"}
+            ],
+        }
+        yield {"type": "thinking", "content": "Reasoning step 2"}
+        # Final content chunk
+        yield {"type": "content", "content": "Final answer"}
+        return
+
+    monkeypatch.setattr(router_module, "generate_stream", fake_stream)
+
+    data = {"user_input": "Check ordering"}
+    event_types: list[str] = []
+
+    with client.stream("POST", "/api/chat-stream", data=data) as r:
+        assert r.status_code == 200
+        for raw_line in r.iter_lines():
+            if not raw_line:
+                continue
+            line = raw_line.decode("utf-8", "ignore") if isinstance(raw_line, (bytes, bytearray)) else raw_line
+            if line.startswith(": "):
+                # Heartbeat comment (": ping")
+                continue
+            if not line.startswith("data: "):
+                continue
+            payload = json.loads(line[6:])
+            etype = payload.get("type")
+            if etype:
+                event_types.append(etype)
+            if etype == "end":
+                break
+
+    assert len(event_types) >= 4, f"Unexpected event stream: {event_types}"
+    assert event_types[0] == "session_info", event_types
+    assert event_types[1] == "rule_chunks", event_types
+    assert "token" in event_types, f"Missing token event: {event_types}"
+    assert event_types[-1] == "end", event_types
+
+    # token must occur after any thinking/tool_calls events
+    first_token_idx = event_types.index("token")
+    last_middle_idx = max([i for i, t in enumerate(event_types) if t in ("thinking", "tool_calls")] or [-1])
+    assert first_token_idx > last_middle_idx, f"token appeared before thinking/tool_calls: {event_types}"
