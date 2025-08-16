@@ -17,6 +17,7 @@ import os
 from typing import Optional
 import requests
 from requests.exceptions import TooManyRedirects, RequestException
+from urllib.parse import urlparse
 
 
 # Shared RAG instance (scoped per-session by callers)
@@ -279,6 +280,7 @@ def build_url_block(url: str, *, timeout: int = 5, max_bytes: int = 100_000, max
             try:
                 html_text = content_bytes.decode("utf-8", errors="ignore")
                 visible = extract_visible_text_from_html(html_text)
+                visible = replace_svg_and_image_tags(visible)
                 snippet = visible + ("\n[Truncated]" if is_truncated else "")
             except Exception as e:  # pragma: no cover - best-effort HTML parsing
                 snippet = f"[Failed HTML parse: {e}]"
@@ -301,7 +303,14 @@ def build_url_block(url: str, *, timeout: int = 5, max_bytes: int = 100_000, max
         finally:
             session.close()
 
+def replace_svg_and_image_tags(html_text: str) -> str:
+    # Replace SVG tags with [SVG]
+    html_text = re.sub(r'(?is)<svg[^>]*>.*?</svg>', '[SVG]', html_text)
 
+    # Replace image tags with [Image:title='alt content']
+    html_text = re.sub(r'(?is)<img[^>]*alt="([^"]*)"[^>]*>', r'[Image:title=\'\1\']', html_text)
+
+    return html_text
 def get_generate_stream():
     """Return the streaming function used by chat routes.
 

@@ -161,7 +161,7 @@ export default function TodoManager({ currentSessionId, refreshKey }) {
 			{loading && <div className="text-xs text-gray-500">Loading...</div>}
 			{error && <div className="text-xs text-red-600">{error}</div>}
 
-			<ul className="space-y-2 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+			<ul className="space-y-2 max-h-60 overflow-y-auto pr-1">
 				{todos.map((t) => {
 					const statusColor =
 						t.status === "pending"

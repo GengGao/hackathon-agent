@@ -18,7 +18,7 @@ function App() {
 	const contextScrollRef = useRef(null);
 	const previousFilesCountRef = useRef(0);
 
-	const { ollamaStatus, handleModelChange } = useOllama();
+	const { ollamaStatus, handleModelChange, handleProviderChange } = useOllama();
 	const { ragStatus, checkRagStatus } = useRag(currentSessionId);
 	const {
 		dashboardData,
@@ -214,6 +214,7 @@ function App() {
 				ollamaStatus={ollamaStatus}
 				onToggleHistory={() => setShowChatHistory(!showChatHistory)}
 				onChangeModel={handleModelChange}
+				onChangeProvider={handleProviderChange}
 			/>
 
 			{/* Main Content */}

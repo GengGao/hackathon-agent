@@ -5,20 +5,39 @@ from openai import AsyncOpenAI
 import os
 
 # ---------------------------------------------------------
-# Configuration – keep it in one place so you can switch later
+# Configuration – provider-agnostic LLM wiring
 # ---------------------------------------------------------
-OLLAMA_BASE_URL = "http://127.0.0.1:11434"          # <- Ollama's base URL (without /v1)
-OLLAMA_MODEL    = "gpt-oss:20b"                     # Just the model name for Ollama
-DUMMY_API_KEY   = "sk-no-key"                       # Ollama ignores it
+# Default base URLs for providers. LMStudio commonly exposes an OpenAI-compatible
+# HTTP API on a different port; if your LMStudio install uses another URL, set
+# LLM_PROVIDER_BASE_URL via env or use the provider endpoint to change it at runtime.
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "http://127.0.0.1:1234")
 
-# Available models - will be fetched from Ollama
+# Default model names per-provider (used as fallbacks)
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
+LMSTUDIO_MODEL = os.getenv("LMSTUDIO_MODEL", "openai/gpt-oss-20b")
+
+# Dummy API key for OpenAI-compatible local runtimes
+DUMMY_API_KEY = os.getenv("DUMMY_API_KEY", "sk-no-key")
+
+# Available models for current provider (populated at init)
 AVAILABLE_MODELS = []
 
-# Global variable to track current model
-current_model = OLLAMA_MODEL
+# Provider state
+# allowed values: "ollama" or "lmstudio"
+DEFAULT_PROVIDER = os.getenv("LLM_PROVIDER", "ollama")
+current_provider = DEFAULT_PROVIDER
+
+# Global variable to track current model selection
+current_model = OLLAMA_MODEL if current_provider == "ollama" else LMSTUDIO_MODEL
+
+# HTTP client (OpenAI-compatible) created per-provider
+client: Optional[AsyncOpenAI] = None
 
 async def initialize_models():
     """Initialize available models on startup and attempt to restore persisted selection."""
+    # recreate client from persisted provider/base_url if present
+    await maybe_restore_provider()
     await fetch_available_models()
     # Attempt restore
     try:
@@ -37,23 +56,44 @@ async def fetch_available_models():
     """Fetch available models from Ollama and update AVAILABLE_MODELS."""
     global AVAILABLE_MODELS
     try:
+        if client is None:
+            _ = create_client_for_current_provider()
         response = await client.models.list()
-        # Filter for gpt-oss models specifically
-        ollama_models = [model.id for model in response.data if model.id.startswith("gpt-oss")]
-        AVAILABLE_MODELS = ollama_models if ollama_models else ["gpt-oss:20b", "gpt-oss:120b"]  # fallback
+        # Try to derive a sensible list from response
+        try:
+            models = [m.id for m in response.data if m.id.startswith("gpt-oss") or m.id.startswith("openai/")]
+
+        except Exception:
+            # Some runtimes return a plain list
+            models = [getattr(m, 'id', str(m)) for m in response]
+
+        AVAILABLE_MODELS = models if len(models) > 0 else ["gpt-oss:20b", "gpt-oss:120b"]
         return AVAILABLE_MODELS
     except Exception as e:
         # Fallback to default models if Ollama is not available
-        AVAILABLE_MODELS = ["gpt-oss:20b", "gpt-oss:120b"]
+        if current_provider == "ollama":
+            AVAILABLE_MODELS = [OLLAMA_MODEL]
+        else:
+            AVAILABLE_MODELS = [LMSTUDIO_MODEL]
         if DEBUG_STREAM:
             print(f"Failed to fetch models from Ollama: {e}. Using fallback models.")
         return AVAILABLE_MODELS
 
 # Initialize OpenAI client for direct Ollama API calls
-client = AsyncOpenAI(
-    base_url=f"{OLLAMA_BASE_URL}/v1",
-    api_key=DUMMY_API_KEY
-)
+def create_client_for_current_provider(base_url: Optional[str] = None) -> AsyncOpenAI:
+    """Create (or recreate) the AsyncOpenAI client for the active provider.
+
+    Note: This function mutates the module-global `client` variable.
+    """
+    global client
+    base = base_url
+    if base is None:
+        base = OLLAMA_BASE_URL if current_provider == "ollama" else LMSTUDIO_BASE_URL
+    client = AsyncOpenAI(base_url=f"{base}/v1", api_key=DUMMY_API_KEY)
+    return client
+
+# Create initial client
+create_client_for_current_provider()
 
 # Debug streaming disabled by default; enable with DEBUG_STREAM=1/true/yes
 DEBUG_STREAM = os.getenv("DEBUG_STREAM", "0").lower() in ("1", "true", "yes")
@@ -312,6 +352,8 @@ async def check_ollama_status():
 
         return {
             "connected": True,
+            "provider": current_provider,
+            "base_url": (OLLAMA_BASE_URL if current_provider == "ollama" else LMSTUDIO_BASE_URL),
             "model": current_model,
             "available_models": available_models
         }
@@ -319,6 +361,8 @@ async def check_ollama_status():
         return {
             "connected": False,
             "error": str(e),
+            "provider": current_provider,
+            "base_url": (OLLAMA_BASE_URL if current_provider == "ollama" else LMSTUDIO_BASE_URL),
             "model": current_model,
             "available_models": AVAILABLE_MODELS  # Use cached/fallback models
         }
@@ -332,6 +376,72 @@ def get_current_model():
 def get_available_models():
     """Get the list of available models."""
     return AVAILABLE_MODELS
+
+
+def get_provider():
+    return current_provider
+
+
+def get_provider_base_url():
+    return OLLAMA_BASE_URL if current_provider == "ollama" else LMSTUDIO_BASE_URL
+
+
+async def maybe_restore_provider():
+    """Try to restore persisted provider/base_url and model from DB settings."""
+    global current_provider, current_model, OLLAMA_BASE_URL, LMSTUDIO_BASE_URL
+    try:
+        from models.db import get_setting
+        prov = get_setting("llm_provider")
+        base = get_setting("llm_base_url")
+        saved_model = get_setting("current_model")
+        if prov in ("ollama", "lmstudio"):
+            current_provider = prov
+        if base:
+            if current_provider == "ollama":
+                OLLAMA_BASE_URL = base
+            else:
+                LMSTUDIO_BASE_URL = base
+        if saved_model:
+            current_model = saved_model
+        # recreate client with restored values
+        create_client_for_current_provider()
+    except Exception:
+        # ignore restore errors
+        create_client_for_current_provider()
+
+
+async def set_provider(provider_name: str, base_url: Optional[str] = None) -> bool:
+    """Set the provider to 'ollama' or 'lmstudio'. Optionally set base_url.
+
+    Persists selection into settings where possible.
+    """
+    global current_provider, OLLAMA_BASE_URL, LMSTUDIO_BASE_URL
+    provider = (provider_name or "").lower()
+    if provider not in ("ollama", "lmstudio"):
+        return False
+    current_provider = provider
+    if base_url:
+        if provider == "ollama":
+            OLLAMA_BASE_URL = base_url
+        else:
+            LMSTUDIO_BASE_URL = base_url
+    # recreate client
+    create_client_for_current_provider(base_url if base_url else None)
+    # attempt to persist
+    try:
+        from models.db import set_setting
+        set_setting("llm_provider", current_provider)
+        if base_url:
+            set_setting("llm_base_url", base_url)
+    except Exception:
+        if DEBUG_STREAM:
+            print("[set_provider] failed to persist provider settings")
+    # refresh available models
+    try:
+        await fetch_available_models()
+    except Exception:
+        pass
+    return True
 
 
 async def set_model(model_name: str):

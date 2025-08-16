@@ -56,7 +56,7 @@ export default function ChatBox({
         ) : null}
       </div>
 
-      <div className="flex-grow p-4 overflow-y-auto scrollbar">
+      <div className="flex-grow p-4 overflow-y-auto">
         {messages.length === 0 ? (
           <div className="flex justify-start mb-4">
             <div className="chat-bubble chat-bubble-agent p-4 rounded-xl max-w-md">

@@ -125,7 +125,7 @@ export default function ChatHistory({
 					<div className="loader" />
 				</div>
 			) : (
-				<div className="flex-grow overflow-y-auto scrollbar space-y-2 p-3">
+				<div className="flex-grow overflow-y-auto space-y-2 p-3">
 					{sessions.length === 0 ? (
 						<div className="text-center py-8 text-readable-light">
 							<i className="fas fa-comments text-2xl mb-2 opacity-50" />

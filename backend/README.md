@@ -6,21 +6,24 @@ FastAPI + local LLM orchestration + retrieval + tooling + persistence.
 
 ---
 ## Contents
-- [Stack](#stack)
-- [Service Responsibilities](#service-responsibilities)
-- [Architecture](#architecture)
-- [Data Flow (Chat Request)](#data-flow-chat-request)
-- [Tools / Function Calling](#tools--function-calling)
-- [RAG Pipeline](#rag-pipeline)
-- [Database & Migrations](#database--migrations)
-- [Environment Variables](#environment-variables)
-- [Running Locally](#running-locally)
-- [API Endpoints](#api-endpoints)
-- [Adding a New Tool](#adding-a-new-tool)
-- [Development Workflow](#development-workflow)
-- [Testing](#testing)
-- [Performance Notes](#performance-notes)
-- [Planned Enhancements](#planned-enhancements)
+- [HackathonHero Backend](#hackathonhero-backend)
+  - [Contents](#contents)
+  - [Stack](#stack)
+  - [Service Responsibilities](#service-responsibilities)
+  - [Architecture](#architecture)
+  - [Data Flow (Chat Request)](#data-flow-chat-request)
+  - [Tools / Function Calling](#tools--function-calling)
+  - [RAG Pipeline](#rag-pipeline)
+  - [Database \& Migrations](#database--migrations)
+  - [Environment Variables](#environment-variables)
+  - [Running Locally](#running-locally)
+  - [API Endpoints](#api-endpoints)
+  - [Adding a New Tool](#adding-a-new-tool)
+  - [Development Workflow](#development-workflow)
+  - [Testing](#testing)
+  - [Performance Notes](#performance-notes)
+  - [Planned Enhancements](#planned-enhancements)
+  - [License](#license)
 
 ---
 ## Stack
@@ -58,15 +61,18 @@ State (SQLite) ◀── models/db helpers ── FastAPI Router ──▶ llm.g
 ---
 ## Data Flow (Chat Request)
 1. User sends form: (`user_input`, optional `files[]`, `url_text`, optional `session_id`).
-2. Files OCR / text extracted (pdfminer, python-docx, pytesseract, plain text) within guardrails (size + extension).
+2. Files OCR / text extracted (pdfminer, python‑docx, pytesseract, plain text) within guardrails (size + extension).
 3. Chat message persisted (`role=user`).
-4. Top-k rule chunks retrieved via FAISS and embedded in system prompt.
-5. `generate_stream` begins streaming tokens:
+4. **RuleRAG** loads the current rules file (`docs/rules.txt`), splits it into *blank‑line groups*, embeds each chunk with MiniLM, and caches the resulting vectors in `data/embeddings/rules_{hash}.pkl`.
+   - If the rules file is replaced, the hash changes and the cache is regenerated.
+5. Top‑k rule chunks are retrieved via a **FAISS IndexFlatIP** (cosine similarity) and inserted into the system prompt.
+   - The FAISS index itself is kept in memory; only the embeddings are persisted to disk to avoid recomputation on every restart.
+6. `generate_stream` begins streaming tokens:
    - Yields `thinking` frames (guarded for repetition/length)
    - Yields `tool_calls` frame if functions invoked (before execution)
    - Executes tool(s) → appends tool results as messages → (optional subsequent round)
    - Yields `content` tokens
-6. Final assistant message persisted.
+7. Final assistant message persisted.
 
 ---
 ## Tools / Function Calling
@@ -80,13 +86,20 @@ Current tools: todos CRUD (`list_todos`, `add_todo`, `clear_todos`), `list_direc
 
 ---
 ## RAG Pipeline
-1. Load rules file (`docs/rules.txt`).
-2. Chunk: split on blank-line groups (simple, fast). *Planned:* semantic splitting & token length capping.
-3. Embed chunks (MiniLM) at startup & on rules replacement.
-4. Query: encode user query; cosine similarity (dot product of normalized vectors) search top-k=5.
-5. Returned similarity scores + raw chunks inserted into system prompt (and separately streamed to client for UI display).
+The rule‑based retrieval is implemented by the `RuleRAG` class (see `models/rag.py`).
+Key steps:
 
-Planned upgrades: embedding cache serialization (avoid recompute), chunk metadata (ids + char offsets), highlight mapping.
+1. **Load Rules** – `docs/rules.txt` (or a replacement file) is read once at startup or when the file is updated.
+2. **Chunking** – Simple blank‑line grouping (fast). Future work: semantic split & token‑length capping.
+3. **Embedding** – Each chunk is encoded with MiniLM (`sentence-transformers/all-MiniLM-L6-v2`).
+   - Vectors are L2‑normalised so that cosine similarity reduces to a dot product.
+4. **Caching** – The embeddings and the FAISS index are serialised to `data/embeddings/` keyed by a SHA‑256 hash of the rules file.
+   - On startup, if a cache file exists for the current hash, it is loaded; otherwise embeddings are recomputed and the cache written.
+5. **Querying** – The user query is embedded, normalised, and searched against the in‑memory FAISS `IndexFlatIP`.
+   - `top_k=5` by default; each returned chunk is paired with its similarity score.
+6. **Prompt Construction** – The top‑k chunks (with scores) are inserted into the system prompt and also streamed to the client as `rule_chunks` events for UI display.
+
+**Vector Index** – FAISS (IndexFlatIP) is used as the vector database. No external service is required; the index lives entirely in memory, with optional persistence via the embedding cache.
 
 ---
 ## Database & Migrations
@@ -110,19 +123,41 @@ Helper functions: see `models/db.py` (CRUD wrappers with safe context management
 
 ---
 ## Running Locally
-```bash
+```powershell
 # From repo root
 cd backend
+
+# Create a virtual environment
 python -m venv .venv
-. .venv/bin/activate        # Windows: .venv\Scripts\activate
+
+# ------------------ Windows (PowerShell) ------------------
+# Activate the venv in PowerShell (pwsh.exe)
+. .venv\Scripts\Activate.ps1
+
+# ------------------ Windows (cmd.exe) ------------------
+# If you use the classic cmd shell instead of PowerShell
+.venv\Scripts\activate
+
+# ------------------ macOS / Linux ------------------
+# Activate the venv on macOS or Linux
+source .venv/bin/activate
+
+# Install Python requirements
 pip install -r requirements.txt
+
 # Optional (recommended for image OCR): install Tesseract system dependency
-# macOS:   brew install tesseract
-# Debian:  sudo apt-get update && sudo apt-get install -y tesseract-ocr
-# Windows: choco install tesseract
+# Windows (Chocolatey):
+#   choco install tesseract
+# macOS (Homebrew):
+#   brew install tesseract
+
+# Initialize the database (creates sqlite file and schema)
 python -c "from models.db import init_db; init_db()"
+
+# Run the dev server
 uvicorn main:app --reload
 ```
+
 API root: http://localhost:8000/api
 SSE events emitted by `/api/chat-stream`: `session_info`, `rule_chunks`, `thinking`, `tool_calls`, `token`, `end`.
 
