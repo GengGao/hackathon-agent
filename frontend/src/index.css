@@ -10,6 +10,21 @@ body,
   overflow: hidden;
 }
 
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #6081e5;
+  -webkit-border-radius: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #28f0f7b0;
+  opacity: 0.5;
+}
+
 /* Enhanced background with multiple gradient layers */
 body {
   font-family: 'Inter', sans-serif;
@@ -261,8 +276,6 @@ body::before {
   /* Reserve space for scrollbar so it doesn't overlap the border */
   scrollbar-gutter: stable both-edges;
   padding-right: 1.25rem; /* ensure content doesn't sit under the scrollbar */
-  scrollbar-width: thin; /* Firefox */
-  scrollbar-color: rgba(102, 126, 234, 0.5) transparent; /* Firefox: thumb + transparent track */
 }
 
 .enhanced-input:focus {
@@ -283,22 +296,6 @@ body::before {
   color: #6b7280;
 }
 
-/* Ensure the textarea's scrollbar doesn't visually block the border */
-.enhanced-input::-webkit-scrollbar {
-  width: 10px;
-}
-.enhanced-input::-webkit-scrollbar-track {
-  background: transparent;
-}
-.enhanced-input::-webkit-scrollbar-thumb {
-  background-color: rgba(102, 126, 234, 0.5);
-  border-radius: 8px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-}
-.enhanced-input::-webkit-scrollbar-corner {
-  background: transparent;
-}
 
 /* Global input and textarea focus styles with gradient border */
 input:focus,
@@ -393,12 +390,6 @@ textarea:focus {
     0 20px 24px -4px rgba(17, 24, 39, 0.18),
     0 8px 10px -6px rgba(17, 24, 39, 0.16);
   filter: drop-shadow(0 6px 12px rgba(17, 24, 39, 0.18));
-}
-
-.scrollbar,
-.custom-scrollbar {
-  scrollbar-width: thin;
-  margin-left: unset;
 }
 
 /* Basic table styling */
