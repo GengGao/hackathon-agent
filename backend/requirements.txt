@@ -12,3 +12,4 @@ openai
 numpy
 pytest
 requests
+langextract>=0.1.0

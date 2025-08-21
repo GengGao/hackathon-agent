@@ -13,6 +13,7 @@ from api import (
     artifacts_router,
     export_router,
 )
+from api.extractions import router as extractions_router
 
 
 router = APIRouter()
@@ -25,5 +26,6 @@ router.include_router(sessions_router)
 router.include_router(ollama_router)
 router.include_router(artifacts_router)
 router.include_router(export_router)
+router.include_router(extractions_router)
 
 

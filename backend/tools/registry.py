@@ -119,6 +119,135 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_conversation_insights",
+                "description": "Analyze conversation insights from chat history including decisions made, technologies chosen, problems solved, and current blockers.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string", "description": "Current chat session ID"},
+                        "message_limit": {"type": "integer", "description": "Maximum number of recent messages to analyze", "default": 50},
+                    },
+                    "required": ["session_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_project_progress",
+                "description": "Analyze project progress from chat history including completed tasks, current blockers, in-progress work, and milestone updates.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string", "description": "Current chat session ID"},
+                        "message_limit": {"type": "integer", "description": "Maximum number of recent messages to analyze", "default": 50},
+                    },
+                    "required": ["session_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_focused_summary",
+                "description": "Get a focused summary of conversation insights with specific focus areas: decisions, blockers, progress, technologies, or comprehensive.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string", "description": "Current chat session ID"},
+                        "focus": {"type": "string", "description": "Focus area: decisions, blockers, progress, technologies, or comprehensive", "default": "comprehensive"},
+                    },
+                    "required": ["session_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_actionable_recommendations",
+                "description": "Get actionable insights and recommendations from conversation analysis including priority recommendations and project health assessment.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string", "description": "Current chat session ID"},
+                    },
+                    "required": ["session_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "analyze_team_decisions",
+                "description": "Extract and analyze key decisions made by the team including technology choices, architecture decisions, and decision-making patterns.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string", "description": "Current chat session ID"},
+                    },
+                    "required": ["session_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "track_problem_resolution",
+                "description": "Track problems encountered and their resolution status including solution success rate and recurring issues.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string", "description": "Current chat session ID"},
+                    },
+                    "required": ["session_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_extraction_status",
+                "description": "Get the status and progress of a background extraction task.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "task_id": {"type": "string", "description": "Task ID returned from starting an extraction"},
+                    },
+                    "required": ["task_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_extraction_result",
+                "description": "Get the result of a completed background extraction task.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "task_id": {"type": "string", "description": "Task ID of the completed extraction"},
+                    },
+                    "required": ["task_id"],
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_session_extractions",
+                "description": "List all extraction tasks for a specific chat session.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string", "description": "Chat session ID to check"},
+                    },
+                    "required": ["session_id"],
+                },
+            },
+        },
     ]
 
 
@@ -152,6 +281,33 @@ def call_tool(function_name: str, arguments: Dict[str, Any]) -> Any:
         if function_name == "generate_chat_title":
             from .titles import generate_chat_title as fn
             return fn(arguments.get("session_id", ""), force=bool(arguments.get("force", False)))
+        if function_name == "get_conversation_insights":
+            from .insight_tools import get_conversation_insights as fn
+            return fn(arguments.get("session_id", ""), arguments.get("message_limit", 50))
+        if function_name == "get_project_progress":
+            from .insight_tools import get_project_progress as fn
+            return fn(arguments.get("session_id", ""), arguments.get("message_limit", 50))
+        if function_name == "get_focused_summary":
+            from .insight_tools import get_focused_summary as fn
+            return fn(arguments.get("session_id", ""), arguments.get("focus", "comprehensive"))
+        if function_name == "get_actionable_recommendations":
+            from .insight_tools import get_actionable_recommendations as fn
+            return fn(arguments.get("session_id", ""))
+        if function_name == "analyze_team_decisions":
+            from .insight_tools import analyze_team_decisions as fn
+            return fn(arguments.get("session_id", ""))
+        if function_name == "track_problem_resolution":
+            from .insight_tools import track_problem_resolution as fn
+            return fn(arguments.get("session_id", ""))
+        if function_name == "get_extraction_status":
+            from .insight_tools import get_extraction_status as fn
+            return fn(arguments.get("task_id", ""))
+        if function_name == "get_extraction_result":
+            from .insight_tools import get_extraction_result as fn
+            return fn(arguments.get("task_id", ""))
+        if function_name == "list_session_extractions":
+            from .insight_tools import list_session_extractions as fn
+            return fn(arguments.get("session_id", ""))
         return {"ok": False, "error": f"Unknown function: {function_name}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}

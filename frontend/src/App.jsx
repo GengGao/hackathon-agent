@@ -220,10 +220,10 @@ function App() {
 			{/* Main Content */}
 			<div className="flex-1 min-h-0 flex flex-col lg:flex-row p-4 gap-4 overflow-hidden">
 				{/* Left Panel with glassmorphism */}
-				<div className="flex flex-col w-full lg:w-1/4 h-full min-h-0 float-animation">
+				<div className="flex flex-col w-full lg:w-1/4 h-full min-h-0 float-animation gap-4">
 					{/* Chat History Sidebar */}
 					<div
-						className={`flex w-full ${showChatHistory ? "block" : "hidden lg:block"} mb-6 h-[50%] min-h-0`}
+						className={`flex w-full ${showChatHistory ? "block" : "hidden lg:block"} h-[30%] min-h-0`}
 					>
 						<ChatHistory
 							currentSessionId={currentSessionId}
@@ -233,16 +233,24 @@ function App() {
 						/>
 					</div>
 
-					<ContextPanel
-						ragStatus={ragStatus}
-						currentSessionId={currentSessionId}
-						uploadedFiles={uploadedFiles}
-						setUploadedFiles={setUploadedFiles}
-						urlText={urlText}
-						setUrlText={setUrlText}
-						setContext={setContext}
-						contextScrollRef={contextScrollRef}
-					/>
+					{/* Context Panel */}
+					<div className="h-[35%] min-h-0">
+						<ContextPanel
+							ragStatus={ragStatus}
+							currentSessionId={currentSessionId}
+							uploadedFiles={uploadedFiles}
+							setUploadedFiles={setUploadedFiles}
+							urlText={urlText}
+							setUrlText={setUrlText}
+							setContext={setContext}
+							contextScrollRef={contextScrollRef}
+						/>
+					</div>
+
+					{/* Extraction Panel */}
+					<div className="h-[35%] min-h-0">
+						<ExtractionPanel currentSessionId={currentSessionId} />
+					</div>
 				</div>
 
 				{/* Center Panel: Chat Interface with glassmorphism */}
