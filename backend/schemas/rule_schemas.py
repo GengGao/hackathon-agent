@@ -1,10 +1,14 @@
-"""Schema definitions for hackathon rule extraction."""
+"""Schema definitions for hackathon rule extraction.
+
+DISABLED: Rule extraction is currently disabled as per project requirements.
+This module exists for future use but is not active in the current system.
+Do NOT use these schemas in production until explicitly re-enabled.
+"""
 
 # Schema for extracting structured information from hackathon rules
 HACKATHON_RULE_SCHEMA = """
-Extract hackathon rules and categorize them into structured information.
-Focus on identifying key rule components that participants need to understand.
-Use exact text from the source for extractions - do not paraphrase.
+DISABLED: Rule extraction is currently disabled per project requirements.
+This schema exists for future use but is not functional in the current system.
 """
 
 # Categories for rule classification

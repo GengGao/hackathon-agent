@@ -56,9 +56,9 @@ export default function ContextPanel({
 
 			<div
 				ref={contextScrollRef}
-				className="flex-1 min-h-0 overflow-y-auto p-3"
+				className="flex-1 min-h-0 overflow-y-auto p-2"
 			>
-				<p className="text-sm text-readable-light mb-4">
+				<p className="text-xs text-readable-light mb-2">
 					Paste rules, URLs, or drag & drop files to give the agent context.
 				</p>
 
@@ -70,29 +70,31 @@ export default function ContextPanel({
 				<textarea
 					name="user-context"
 					placeholder="Or paste text/URLs here..."
-					className="context-textarea w-full mt-4 border border-white/20 text-sm enhanced-input placeholder-gray-500"
+					className="context-textarea w-full mt-2 border border-white/20 text-xs enhanced-input placeholder-gray-500"
 					value={urlText}
 					onChange={(e) => setUrlText(e.target.value)}
 				/>
 				<button
 					onClick={setContext}
-					className="context-button mt-2 btn-gradient font-bold px-4 transition-all duration-300"
+					className="context-button mt-2 btn-gradient font-bold px-3 transition-all duration-300"
 					type="button"
 					aria-label="Set context for this chat session"
 				>
-					<i className="fas fa-check-circle mr-2" />
+					<i className="fas fa-check-circle mr-1 text-sm" />
 					Set Context
 				</button>
-				<div className="mt-3 text-sm space-y-1">
+				<div className="mt-2 text-xs space-y-1">
 					{uploadedFiles.length > 0 && (
 						<>
-							<p className="font-semibold text-readable-dark">Context Files:</p>
+							<p className="font-semibold text-readable-dark mb-1">Files:</p>
 							{uploadedFiles.map((file, index) => (
 								<div
 									key={`${file.name}-${index}`}
-									className="flex items-center justify-between glass-effect-readable p-2 rounded-lg border border-white/10"
+									className="flex items-center justify-between glass-effect-readable p-1.5 rounded border border-white/10"
 								>
-									<span className="text-readable-dark">{file.name}</span>
+									<span className="text-readable-dark text-xs truncate">
+										{file.name}
+									</span>
 									<button
 										onClick={() => {
 											const newFiles = uploadedFiles.filter(
@@ -100,7 +102,7 @@ export default function ContextPanel({
 											);
 											setUploadedFiles(newFiles);
 										}}
-										className="ml-2 text-red-500 hover:text-red-600 transition-colors"
+										className="ml-1 text-red-500 hover:text-red-600 transition-colors text-xs"
 										type="button"
 									>
 										<i className="fas fa-times" />

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ChatBox from "./components/ChatBox";
 import ChatHistory from "./components/ChatHistory";
 import ContextPanel from "./components/ContextPanel";
+import ExtractionPanel from "./components/ExtractionPanel";
 import Header from "./components/Header";
 import ProjectDashboard from "./components/ProjectDashboard";
 import useChat from "./hooks/useChat";
@@ -14,6 +15,7 @@ function App() {
 	const [uploadedFiles, setUploadedFiles] = useState([]);
 	const [currentSessionId, setCurrentSessionId] = useState(null);
 	const [showChatHistory, setShowChatHistory] = useState(false);
+	const [showExtractionModal, setShowExtractionModal] = useState(false);
 	const [todosRefreshKey, setTodosRefreshKey] = useState(0);
 	const contextScrollRef = useRef(null);
 	const previousFilesCountRef = useRef(0);
@@ -196,6 +198,9 @@ function App() {
 			setUrlText("");
 			setUploadedFiles([]);
 
+			// Close extraction modal when switching sessions to prevent layout issues
+			setShowExtractionModal(false);
+
 			// Dashboard will auto-refresh on session change via effect
 		} catch (error) {
 			console.error("Failed to load session:", error);
@@ -223,7 +228,7 @@ function App() {
 				<div className="flex flex-col w-full lg:w-1/4 h-full min-h-0 float-animation gap-4">
 					{/* Chat History Sidebar */}
 					<div
-						className={`flex w-full ${showChatHistory ? "block" : "hidden lg:block"} h-[30%] min-h-0`}
+						className={`flex w-full ${showChatHistory ? "block" : "hidden lg:block"} h-[40%] min-h-0`}
 					>
 						<ChatHistory
 							currentSessionId={currentSessionId}
@@ -234,7 +239,7 @@ function App() {
 					</div>
 
 					{/* Context Panel */}
-					<div className="h-[35%] min-h-0">
+					<div className="h-[25%] min-h-0">
 						<ContextPanel
 							ragStatus={ragStatus}
 							currentSessionId={currentSessionId}
@@ -245,11 +250,6 @@ function App() {
 							setContext={setContext}
 							contextScrollRef={contextScrollRef}
 						/>
-					</div>
-
-					{/* Extraction Panel */}
-					<div className="h-[35%] min-h-0">
-						<ExtractionPanel currentSessionId={currentSessionId} />
 					</div>
 				</div>
 
@@ -263,6 +263,7 @@ function App() {
 						onStop={stopGeneration}
 						currentSessionId={currentSessionId}
 						ragReady={ragStatus.ready && !ragStatus.building}
+						onOpenExtractions={() => setShowExtractionModal(true)}
 					/>
 				</div>
 
@@ -279,6 +280,34 @@ function App() {
 					todosRefreshKey={todosRefreshKey}
 				/>
 			</div>
+
+			{/* AI Extractions Floating Modal */}
+			{showExtractionModal && (
+				<div className="fixed inset-0 bg-white/30 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+					<div className="glass-effect-readable rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-white/20">
+						{/* Modal Header */}
+						<div className="bg-white/60 flex items-center justify-between p-4 border-b border-white/20">
+							<h2 className="text-xl font-semibold gradient-text flex items-center gap-2">
+								<i className="fas fa-brain text-purple-500" />
+								AI Extractions
+							</h2>
+							<button
+								onClick={() => setShowExtractionModal(false)}
+								className="text-readable-light hover:text-white transition-colors p-2 hover:bg-white/10 rounded-lg"
+								title="Close"
+								type="button"
+							>
+								<i className="fas fa-times text-xl" />
+							</button>
+						</div>
+
+						{/* Modal Content */}
+						<div className="bg-white/60 flex-1 min-h-0 overflow-hidden">
+							<ExtractionPanel currentSessionId={currentSessionId} />
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }

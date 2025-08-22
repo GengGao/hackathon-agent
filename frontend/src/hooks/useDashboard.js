@@ -57,51 +57,58 @@ const useDashboard = (currentSessionId) => {
 		}
 	}, [currentSessionId]);
 
-	const streamHelper = async (url, key) => {
-		const controller = new AbortController();
-		try {
-			setDashboardData((prev) => ({ ...prev, [key]: "" }));
-			const res = await fetch(url, {
-				method: "POST",
-				signal: controller.signal,
-				headers: { Accept: "text/event-stream" },
-			});
-			if (!res.ok) throw new Error(res.statusText);
-			const reader = res.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = "";
-			let content = "";
-			let ended = false;
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done || ended) break;
-				buffer += decoder.decode(value, { stream: true });
-				let idx = buffer.indexOf("\n\n");
-				while (idx !== -1) {
-					const block = buffer.slice(0, idx);
-					buffer = buffer.slice(idx + 2);
-					const lines = block.split("\n").filter((l) => l.startsWith("data:"));
-					if (lines.length) {
-						try {
-							const payload = JSON.parse(
-								lines.map((l) => l.replace(/^data:\s?/, "")).join("\n"),
-							);
-							if (payload.type === "token") {
-								content += payload.token || "";
-								setDashboardData((prev) => ({ ...prev, [key]: content }));
-							} else if (payload.type === "end") {
-								ended = true;
+	const streamHelper = useCallback(
+		async (url, key) => {
+			const controller = new AbortController();
+			try {
+				setDashboardData((prev) => ({ ...prev, [key]: "" }));
+				const res = await fetch(url, {
+					method: "POST",
+					signal: controller.signal,
+					headers: { Accept: "text/event-stream" },
+				});
+				if (!res.ok) throw new Error(res.statusText);
+				const reader = res.body.getReader();
+				const decoder = new TextDecoder();
+				let buffer = "";
+				let content = "";
+				let ended = false;
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done || ended) break;
+					buffer += decoder.decode(value, { stream: true });
+					let idx = buffer.indexOf("\n\n");
+					while (idx !== -1) {
+						const block = buffer.slice(0, idx);
+						buffer = buffer.slice(idx + 2);
+						const lines = block
+							.split("\n")
+							.filter((l) => l.startsWith("data:"));
+						if (lines.length) {
+							try {
+								const payload = JSON.parse(
+									lines.map((l) => l.replace(/^data:\s?/, "")).join("\n"),
+								);
+								if (payload.type === "token") {
+									content += payload.token || "";
+									setDashboardData((prev) => ({ ...prev, [key]: content }));
+								} else if (payload.type === "end") {
+									ended = true;
+								}
+							} catch (error) {
+								console.error("Failed to parse streaming response:", error);
 							}
-						} catch {}
+						}
+						idx = buffer.indexOf("\n\n");
 					}
-					idx = buffer.indexOf("\n\n");
 				}
+				await refreshDashboard();
+			} finally {
+				controller.abort();
 			}
-			await refreshDashboard();
-		} finally {
-			controller.abort();
-		}
-	};
+		},
+		[refreshDashboard],
+	);
 
 	const generateProjectIdea = useCallback(async () => {
 		if (!currentSessionId) {
@@ -120,7 +127,7 @@ const useDashboard = (currentSessionId) => {
 		} finally {
 			setIsStreamingIdea(false);
 		}
-	}, [currentSessionId, refreshDashboard]);
+	}, [currentSessionId, streamHelper]);
 
 	const generateTechStack = useCallback(async () => {
 		if (!currentSessionId) {
@@ -139,7 +146,7 @@ const useDashboard = (currentSessionId) => {
 		} finally {
 			setIsStreamingStack(false);
 		}
-	}, [currentSessionId, refreshDashboard]);
+	}, [currentSessionId, streamHelper]);
 
 	const generateSubmissionNotes = useCallback(async () => {
 		if (!currentSessionId) {
@@ -158,7 +165,7 @@ const useDashboard = (currentSessionId) => {
 		} finally {
 			setIsStreamingSummary(false);
 		}
-	}, [currentSessionId, refreshDashboard]);
+	}, [currentSessionId, streamHelper]);
 
 	return {
 		dashboardData,

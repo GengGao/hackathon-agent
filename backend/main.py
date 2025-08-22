@@ -1,9 +1,16 @@
 import uvicorn
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from router import router
 from models.db import init_db
 from llm import initialize_models
+
+# Configure logging to show INFO level logs for debugging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 app = FastAPI(
     title="HackathonHero",

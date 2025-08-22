@@ -11,7 +11,8 @@ import logging
 
 from extractors.conversation_extractor import ConversationExtractor
 from extractors.progress_extractor import ProgressExtractor
-from models.db import get_chat_messages
+from models.db import (get_chat_messages, create_extraction_task,
+    update_extraction_task_status, save_extraction_result, get_extraction_tasks, get_extraction_task_by_id, get_extraction_result)
 
 logger = logging.getLogger(__name__)
 
@@ -54,18 +55,17 @@ class ExtractionService:
         """Start background conversation extraction."""
         task_id = str(uuid.uuid4())
 
-        with self._lock:
-            task = ExtractionTask(
-                task_id=task_id,
-                session_id=session_id,
-                task_type="conversation",
-                extractor_type="ConversationExtractor",
-                message_limit=message_limit
-            )
-            self.tasks[task_id] = task
+        # Create task in database
+        create_extraction_task(
+            task_id=task_id,
+            session_id=session_id,
+            task_type="conversation",
+            extractor_type="ConversationExtractor",
+            message_limit=message_limit
+        )
 
         # Submit to thread pool
-        self.executor.submit(self._run_conversation_extraction, task)
+        self.executor.submit(self._run_conversation_extraction, task_id, session_id, message_limit)
 
         logger.info(f"Started conversation extraction task {task_id} for session {session_id}")
         return task_id
@@ -74,57 +74,81 @@ class ExtractionService:
         """Start background progress extraction."""
         task_id = str(uuid.uuid4())
 
-        with self._lock:
-            task = ExtractionTask(
-                task_id=task_id,
-                session_id=session_id,
-                task_type="progress",
-                extractor_type="ProgressExtractor",
-                message_limit=message_limit
-            )
-            self.tasks[task_id] = task
+        # Create task in database
+        create_extraction_task(
+            task_id=task_id,
+            session_id=session_id,
+            task_type="progress",
+            extractor_type="ProgressExtractor",
+            message_limit=message_limit
+        )
 
         # Submit to thread pool
-        self.executor.submit(self._run_progress_extraction, task)
+        self.executor.submit(self._run_progress_extraction, task_id, session_id, message_limit)
 
         logger.info(f"Started progress extraction task {task_id} for session {session_id}")
         return task_id
 
-    def _run_conversation_extraction(self, task: ExtractionTask):
+    def _run_conversation_extraction(self, task_id: str, session_id: str, message_limit: int):
         """Run conversation extraction in background thread."""
         try:
-            with self._lock:
-                task.status = "running"
-                task.started_at = datetime.utcnow()
-                task.current_step = "Loading chat messages..."
-                task.current_step_num = 1
-                task.progress = 0.2
+            # Update task status to running
+            update_extraction_task_status(
+                task_id=task_id,
+                status="running",
+                current_step="Loading chat messages...",
+                current_step_num=1,
+                progress=0.2
+            )
 
             # Get messages
-            messages = get_chat_messages(task.session_id, limit=task.message_limit)
+            messages = get_chat_messages(session_id, limit=message_limit)
             if not messages:
                 raise Exception("No chat history found for this session")
 
-            with self._lock:
-                task.current_step = "Initializing conversation extractor..."
-                task.current_step_num = 2
-                task.progress = 0.4
+            # Debug: Log messages being processed
+            logger.info(f"Processing {len(messages)} messages for session {session_id}")
+            for i, msg in enumerate(messages):
+                logger.info(f"Message {i+1}: {msg['role']} - {msg['content'][:200]}...")
+
+            # Update task status
+            update_extraction_task_status(
+                task_id=task_id,
+                status="running",
+                current_step="Initializing conversation extractor...",
+                current_step_num=2,
+                progress=0.4
+            )
 
             # Initialize extractor
             extractor = ConversationExtractor()
 
-            with self._lock:
-                task.current_step = f"Extracting insights from {len(messages)} messages..."
-                task.current_step_num = 3
-                task.progress = 0.6
+            # Update task status
+            update_extraction_task_status(
+                task_id=task_id,
+                status="running",
+                current_step=f"Extracting insights from {len(messages)} messages...",
+                current_step_num=3,
+                progress=0.6
+            )
 
             # Run extraction
             result = extractor.extract_from_messages(messages)
 
-            with self._lock:
-                task.current_step = "Processing extracted insights..."
-                task.current_step_num = 4
-                task.progress = 0.8
+            # Debug: Log extraction results
+            logger.info(f"Extraction completed: {len(result.get('insights', []))} insights found")
+            if result.get('insights'):
+                for i, insight in enumerate(result['insights']):
+                    logger.info(f"Insight {i+1}: {insight.get('category', 'unknown')} - {insight.get('text', '')[:100]}...")
+
+            # Update task status
+            update_extraction_task_status(
+                task_id=task_id,
+                status="running",
+                current_step="Processing extracted insights...",
+                current_step_num=4,
+                progress=0.8
+            )
 
             # Get specific insight types
             key_decisions = extractor.get_key_decisions(result['insights'])
@@ -134,7 +158,7 @@ class ExtractionService:
             # Prepare final result
             final_result = {
                 "ok": True,
-                "session_id": task.session_id,
+                "session_id": session_id,
                 "insights": result['insights'],
                 "categorized": result['categorized'],
                 "summary": result['summary'],
@@ -142,61 +166,95 @@ class ExtractionService:
                 "current_blockers": current_blockers,
                 "next_actions": next_actions,
                 "message_count_analyzed": len(messages),
-                "extraction_time": time.time() - task.started_at.timestamp()
+                "extraction_time": 0  # Will be calculated when task is retrieved
             }
 
-            with self._lock:
-                task.current_step = "Extraction completed!"
-                task.current_step_num = 5
-                task.progress = 1.0
-                task.status = "completed"
-                task.completed_at = datetime.utcnow()
-                task.result = final_result
+            # Debug: Log final results
+            logger.info(f"Final result: {len(result['insights'])} insights, {len(key_decisions)} key decisions, {len(current_blockers)} blockers, {len(next_actions)} next actions")
 
-            logger.info(f"Conversation extraction task {task.task_id} completed successfully")
+            # Update task status to completed
+            update_extraction_task_status(
+                task_id=task_id,
+                status="completed",
+                current_step="Extraction completed!",
+                current_step_num=5,
+                progress=1.0
+            )
+
+            # Store result in database
+            save_extraction_result(task_id, final_result)
+
+            logger.info(f"Conversation extraction task {task_id} completed successfully")
 
         except Exception as e:
-            logger.error(f"Conversation extraction task {task.task_id} failed: {e}")
-            with self._lock:
-                task.status = "failed"
-                task.error = str(e)
-                task.completed_at = datetime.utcnow()
+            logger.error(f"Conversation extraction task {task_id} failed: {e}")
+            # Update task status to failed
+            update_extraction_task_status(
+                task_id=task_id,
+                status="failed",
+                error=str(e)
+            )
 
-    def _run_progress_extraction(self, task: ExtractionTask):
+    def _run_progress_extraction(self, task_id: str, session_id: str, message_limit: int):
         """Run progress extraction in background thread."""
         try:
-            with self._lock:
-                task.status = "running"
-                task.started_at = datetime.utcnow()
-                task.current_step = "Loading chat messages..."
-                task.current_step_num = 1
-                task.progress = 0.2
+            # Update task status to running
+            update_extraction_task_status(
+                task_id=task_id,
+                status="running",
+                current_step="Loading chat messages...",
+                current_step_num=1,
+                progress=0.2
+            )
 
             # Get messages
-            messages = get_chat_messages(task.session_id, limit=task.message_limit)
+            messages = get_chat_messages(session_id, limit=message_limit)
             if not messages:
                 raise Exception("No chat history found for this session")
 
-            with self._lock:
-                task.current_step = "Initializing progress extractor..."
-                task.current_step_num = 2
-                task.progress = 0.4
+            # Debug: Log messages being processed
+            logger.info(f"Processing {len(messages)} messages for session {session_id}")
+            for i, msg in enumerate(messages):
+                logger.info(f"Message {i+1}: {msg['role']} - {msg['content'][:200]}...")
+
+            # Update task status
+            update_extraction_task_status(
+                task_id=task_id,
+                status="running",
+                current_step="Initializing progress extractor...",
+                current_step_num=2,
+                progress=0.4
+            )
 
             # Initialize extractor
             extractor = ProgressExtractor()
 
-            with self._lock:
-                task.current_step = f"Analyzing progress from {len(messages)} messages..."
-                task.current_step_num = 3
-                task.progress = 0.6
+            # Update task status
+            update_extraction_task_status(
+                task_id=task_id,
+                status="running",
+                current_step=f"Analyzing progress from {len(messages)} messages...",
+                current_step_num=3,
+                progress=0.6
+            )
 
             # Run extraction
             result = extractor.extract_from_messages(messages)
 
-            with self._lock:
-                task.current_step = "Processing progress metrics..."
-                task.current_step_num = 4
-                task.progress = 0.8
+            # Debug: Log extraction results
+            logger.info(f"Extraction completed: {len(result.get('progress_items', []))} progress items found")
+            if result.get('progress_items'):
+                for i, item in enumerate(result['progress_items']):
+                    logger.info(f"Progress item {i+1}: {item.get('category', 'unknown')} - {item.get('text', '')[:100]}...")
+
+            # Update task status
+            update_extraction_task_status(
+                task_id=task_id,
+                status="running",
+                current_step="Processing progress metrics...",
+                current_step_num=4,
+                progress=0.8
+            )
 
             # Get specific progress metrics
             completion_status = extractor.get_completion_status(result['progress_items'])
@@ -207,7 +265,7 @@ class ExtractionService:
             # Prepare final result
             final_result = {
                 "ok": True,
-                "session_id": task.session_id,
+                "session_id": session_id,
                 "progress_items": result['progress_items'],
                 "categorized": result['categorized'],
                 "summary": result['summary'],
@@ -216,69 +274,46 @@ class ExtractionService:
                 "milestone_progress": milestone_progress,
                 "resource_needs": resource_needs,
                 "message_count_analyzed": len(messages),
-                "extraction_time": time.time() - task.started_at.timestamp()
+                "extraction_time": 0  # Will be calculated when task is retrieved
             }
 
-            with self._lock:
-                task.current_step = "Progress analysis completed!"
-                task.current_step_num = 5
-                task.progress = 1.0
-                task.status = "completed"
-                task.completed_at = datetime.utcnow()
-                task.result = final_result
+            # Debug: Log final results
+            logger.info(f"Final result: {len(result['progress_items'])} progress items, {len(current_blockers)} blockers, completion rate: {result['summary'].get('completion_rate', 0)}%")
 
-            logger.info(f"Progress extraction task {task.task_id} completed successfully")
+            # Update task status to completed
+            update_extraction_task_status(
+                task_id=task_id,
+                status="completed",
+                current_step="Progress analysis completed!",
+                current_step_num=5,
+                progress=1.0
+            )
+
+            # Store result in database
+            save_extraction_result(task_id, final_result)
+
+            logger.info(f"Progress extraction task {task_id} completed successfully")
 
         except Exception as e:
-            logger.error(f"Progress extraction task {task.task_id} failed: {e}")
-            with self._lock:
-                task.status = "failed"
-                task.error = str(e)
-                task.completed_at = datetime.utcnow()
+            logger.error(f"Progress extraction task {task_id} failed: {e}")
+            # Update task status to failed
+            update_extraction_task_status(
+                task_id=task_id,
+                status="failed",
+                error=str(e)
+            )
 
     def get_task_status(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Get status of a specific task."""
-        with self._lock:
-            task = self.tasks.get(task_id)
-            if not task:
-                return None
-
-            return {
-                "task_id": task.task_id,
-                "session_id": task.session_id,
-                "task_type": task.task_type,
-                "extractor_type": task.extractor_type,
-                "status": task.status,
-                "progress": task.progress,
-                "current_step": task.current_step,
-                "current_step_num": task.current_step_num,
-                "total_steps": task.total_steps,
-                "created_at": task.created_at.isoformat(),
-                "started_at": task.started_at.isoformat() if task.started_at else None,
-                "completed_at": task.completed_at.isoformat() if task.completed_at else None,
-                "error": task.error,
-                "has_result": task.result is not None
-            }
+        return get_extraction_task_by_id(task_id)
 
     def get_task_result(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Get result of a completed task."""
-        with self._lock:
-            task = self.tasks.get(task_id)
-            if not task or task.status != "completed":
-                return None
-            return task.result
+        return get_extraction_result(task_id)
 
     def get_session_tasks(self, session_id: str) -> List[Dict[str, Any]]:
         """Get all tasks for a specific session."""
-        with self._lock:
-            session_tasks = []
-            for task in self.tasks.values():
-                if task.session_id == session_id:
-                    session_tasks.append(self.get_task_status(task.task_id))
-
-            # Sort by creation time, newest first
-            session_tasks.sort(key=lambda x: x['created_at'], reverse=True)
-            return session_tasks
+        return get_extraction_tasks(session_id)
 
     def cleanup_old_tasks(self, max_age_hours: int = 24):
         """Clean up old completed/failed tasks."""

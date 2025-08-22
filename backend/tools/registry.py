@@ -248,6 +248,21 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "get_project_status_overview_tool",
+                "description": "Get comprehensive project status overview combining conversation and progress insights with project phase assessment.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "session_id": {"type": "string", "description": "Current chat session ID"},
+                        "message_limit": {"type": "integer", "description": "Maximum number of recent messages to analyze", "default": 30},
+                    },
+                    "required": ["session_id"],
+                },
+            },
+        },
     ]
 
 
@@ -308,6 +323,9 @@ def call_tool(function_name: str, arguments: Dict[str, Any]) -> Any:
         if function_name == "list_session_extractions":
             from .insight_tools import list_session_extractions as fn
             return fn(arguments.get("session_id", ""))
+        if function_name == "get_project_status_overview_tool":
+            from .insight_tools import get_project_status_overview_tool as fn
+            return fn(arguments.get("session_id", ""), arguments.get("message_limit", 30))
         return {"ok": False, "error": f"Unknown function: {function_name}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}

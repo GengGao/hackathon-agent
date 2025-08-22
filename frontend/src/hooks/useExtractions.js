@@ -10,7 +10,9 @@ const useExtractions = (currentSessionId) => {
 
 		try {
 			setIsLoading(true);
-			const res = await fetch(`/api/extractions/session/${encodeURIComponent(currentSessionId)}`);
+			const res = await fetch(
+				`/api/extractions/session/${encodeURIComponent(currentSessionId)}`,
+			);
 			if (!res.ok) throw new Error(res.statusText);
 			const data = await res.json();
 			setExtractions(data.tasks || []);
@@ -22,61 +24,75 @@ const useExtractions = (currentSessionId) => {
 		}
 	}, [currentSessionId]);
 
-	const startConversationExtraction = useCallback(async (messageLimit = 50) => {
-		if (!currentSessionId) return null;
+	const startConversationExtraction = useCallback(
+		async (messageLimit = 50) => {
+			if (!currentSessionId) return null;
 
-		try {
-			const res = await fetch("/api/extractions/conversation/start", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					session_id: currentSessionId,
-					message_limit: messageLimit,
-				}),
-			});
+			try {
+				const url = new URL(
+					"/api/extractions/conversation/start",
+					window.location.origin,
+				);
+				url.searchParams.set("session_id", currentSessionId);
+				url.searchParams.set("message_limit", messageLimit.toString());
 
-			if (!res.ok) throw new Error(res.statusText);
-			const data = await res.json();
+				const res = await fetch(url.toString(), {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+				});
 
-			// Refresh extractions list
-			fetchSessionExtractions();
+				if (!res.ok) throw new Error(res.statusText);
+				const data = await res.json();
 
-			return data.task_id;
-		} catch (error) {
-			console.error("Failed to start conversation extraction:", error);
-			return null;
-		}
-	}, [currentSessionId, fetchSessionExtractions]);
+				// Refresh extractions list
+				fetchSessionExtractions();
 
-	const startProgressExtraction = useCallback(async (messageLimit = 50) => {
-		if (!currentSessionId) return null;
+				return data.task_id;
+			} catch (error) {
+				console.error("Failed to start conversation extraction:", error);
+				return null;
+			}
+		},
+		[currentSessionId, fetchSessionExtractions],
+	);
 
-		try {
-			const res = await fetch("/api/extractions/progress/start", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					session_id: currentSessionId,
-					message_limit: messageLimit,
-				}),
-			});
+	const startProgressExtraction = useCallback(
+		async (messageLimit = 50) => {
+			if (!currentSessionId) return null;
 
-			if (!res.ok) throw new Error(res.statusText);
-			const data = await res.json();
+			try {
+				const url = new URL(
+					"/api/extractions/progress/start",
+					window.location.origin,
+				);
+				url.searchParams.set("session_id", currentSessionId);
+				url.searchParams.set("message_limit", messageLimit.toString());
 
-			// Refresh extractions list
-			fetchSessionExtractions();
+				const res = await fetch(url.toString(), {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+				});
 
-			return data.task_id;
-		} catch (error) {
-			console.error("Failed to start progress extraction:", error);
-			return null;
-		}
-	}, [currentSessionId, fetchSessionExtractions]);
+				if (!res.ok) throw new Error(res.statusText);
+				const data = await res.json();
+
+				// Refresh extractions list
+				fetchSessionExtractions();
+
+				return data.task_id;
+			} catch (error) {
+				console.error("Failed to start progress extraction:", error);
+				return null;
+			}
+		},
+		[currentSessionId, fetchSessionExtractions],
+	);
 
 	const getTaskResult = useCallback(async (taskId) => {
 		try {
-			const res = await fetch(`/api/extractions/task/${encodeURIComponent(taskId)}/result`);
+			const res = await fetch(
+				`/api/extractions/task/${encodeURIComponent(taskId)}/result`,
+			);
 			if (!res.ok) {
 				if (res.status === 202) {
 					return { ok: false, error: "Task not yet completed" };
@@ -101,8 +117,8 @@ const useExtractions = (currentSessionId) => {
 
 	// Poll for updates when there are active tasks
 	useEffect(() => {
-		const activeTasks = extractions.filter(task =>
-			task.status === "queued" || task.status === "running"
+		const activeTasks = extractions.filter(
+			(task) => task.status === "queued" || task.status === "running",
 		);
 
 		if (activeTasks.length > 0) {

@@ -6,7 +6,8 @@ from tools.conversation_insights import (
     analyze_conversation_insights,
     analyze_project_progress,
     get_conversation_summary,
-    get_actionable_insights
+    get_actionable_insights,
+    get_project_status_overview
 )
 from services.extraction_service import get_extraction_service
 
@@ -310,6 +311,28 @@ def list_session_extractions(session_id: str) -> str:
 
     return json.dumps(result, indent=2)
 
+def get_project_status_overview_tool(session_id: str, message_limit: int = 30) -> str:
+    """
+    Get comprehensive project status overview combining conversation and progress insights.
+
+    This tool provides a holistic view of the project by analyzing:
+    - Key decisions and technology choices from conversation
+    - Project progress metrics and completion status
+    - Current blockers and challenges
+    - Next action items and priorities
+    - Project health assessment and phase determination
+    - Resource needs and problem-solving effectiveness
+
+    Args:
+        session_id: The chat session ID to analyze
+        message_limit: Maximum number of recent messages to analyze (default: 30)
+
+    Returns:
+        JSON string containing comprehensive project status overview
+    """
+    result = get_project_status_overview(session_id, message_limit)
+    return json.dumps(result, indent=2)
+
 __all__ = [
     "get_conversation_insights",
     "get_project_progress",
@@ -319,5 +342,6 @@ __all__ = [
     "track_problem_resolution",
     "get_extraction_status",
     "get_extraction_result",
-    "list_session_extractions"
+    "list_session_extractions",
+    "get_project_status_overview_tool"
 ]

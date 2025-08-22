@@ -1,4 +1,9 @@
-"""Few-shot examples for hackathon rule extraction."""
+"""Few-shot examples for hackathon rule extraction.
+
+DISABLED: Rule extraction is currently disabled as per project requirements.
+This module exists for future use but is not active in the current system.
+Do NOT use these examples in production until explicitly re-enabled.
+"""
 
 try:
     import langextract as lx

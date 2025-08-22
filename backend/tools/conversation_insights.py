@@ -255,9 +255,125 @@ def get_actionable_insights(session_id: str) -> Dict[str, Any]:
         logger.error(f"Failed to generate actionable insights: {e}")
         return {"ok": False, "error": str(e)}
 
+def get_project_status_overview(session_id: str, message_limit: Optional[int] = 30) -> Dict[str, Any]:
+    """
+    Get a comprehensive project status overview combining conversation and progress insights.
+
+    This function provides a holistic view of the project by combining:
+    - Key decisions and technology choices from conversation analysis
+    - Project progress metrics and completion status
+    - Current blockers and challenges
+    - Next action items and priorities
+    - Project health assessment
+
+    Args:
+        session_id: Chat session ID to analyze
+        message_limit: Maximum number of recent messages to analyze
+
+    Returns:
+        Dictionary containing comprehensive project status overview
+    """
+    if not session_id:
+        return {"ok": False, "error": "Session ID is required"}
+
+    try:
+        # Get both conversation and progress insights
+        conversation_result = analyze_conversation_insights(session_id, message_limit)
+        progress_result = analyze_project_progress(session_id, message_limit)
+
+        if not conversation_result["ok"] or not progress_result["ok"]:
+            return {"ok": False, "error": "Failed to analyze conversation or progress"}
+
+        # Combine insights into comprehensive overview
+        overview = {
+            "session_id": session_id,
+            "timestamp": conversation_result["summary"]["extracted_at"],
+            "message_count_analyzed": max(
+                conversation_result["message_count_analyzed"],
+                progress_result["message_count_analyzed"]
+            ),
+
+            # Decision and technology insights
+            "key_decisions": conversation_result["key_decisions"],
+            "technologies_chosen": [
+                insight for insight in conversation_result["insights"]
+                if insight["category"] == "technologies_chosen"
+            ],
+            "technology_count": len([
+                insight for insight in conversation_result["insights"]
+                if insight["category"] == "technologies_chosen"
+            ]),
+
+            # Progress metrics
+            "project_health": progress_result["summary"]["project_health"],
+            "completion_rate": progress_result["summary"]["completion_rate"],
+            "completed_tasks": progress_result["completion_status"]["completed"],
+            "in_progress_tasks": progress_result["completion_status"]["in_progress"],
+            "planned_tasks": progress_result["completion_status"]["planned"],
+
+            # Current challenges and blockers
+            "current_blockers": list(set(
+                [b["blocker"] for b in conversation_result["current_blockers"]] +
+                [b["blocker"] for b in progress_result["current_blockers"]]
+            )),
+            "resource_needs": progress_result["resource_needs"],
+
+            # Next steps and actions
+            "next_actions": conversation_result["next_actions"],
+            "action_count": len(conversation_result["next_actions"]),
+
+            # Problem-solving insights
+            "problems_solved": [
+                insight for insight in conversation_result["insights"]
+                if insight["category"] == "problems_solved"
+            ],
+            "resolution_count": len([
+                insight for insight in conversation_result["insights"]
+                if insight["category"] == "problems_solved"
+            ]),
+
+            # Analysis metadata
+            "total_insights": conversation_result["summary"]["total_insights"],
+            "total_progress_items": progress_result["summary"]["total_progress_items"],
+            "extraction_methods": list(set([
+                insight["source"] for insight in conversation_result["insights"]
+            ])),
+
+            # Quick status indicators
+            "status_indicators": {
+                "has_active_blockers": len(conversation_result["current_blockers"]) > 0 or len(progress_result["current_blockers"]) > 0,
+                "has_pending_actions": len(conversation_result["next_actions"]) > 0,
+                "has_technologies": len([insight for insight in conversation_result["insights"] if insight["category"] == "technologies_chosen"]) > 0,
+                "project_in_progress": progress_result["summary"]["completion_rate"] > 0,
+                "needs_resources": len(progress_result["resource_needs"]) > 0
+            }
+        }
+
+        # Add project phase assessment
+        if overview["completion_rate"] == 0:
+            overview["project_phase"] = "planning"
+        elif overview["completion_rate"] < 30:
+            overview["project_phase"] = "early_development"
+        elif overview["completion_rate"] < 70:
+            overview["project_phase"] = "active_development"
+        elif overview["completion_rate"] < 100:
+            overview["project_phase"] = "testing_polish"
+        else:
+            overview["project_phase"] = "completed"
+
+        return {
+            "ok": True,
+            "overview": overview
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to generate project status overview: {e}")
+        return {"ok": False, "error": str(e)}
+
 __all__ = [
     "analyze_conversation_insights",
     "analyze_project_progress",
     "get_conversation_summary",
-    "get_actionable_insights"
+    "get_actionable_insights",
+    "get_project_status_overview"
 ]

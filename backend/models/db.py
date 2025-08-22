@@ -615,3 +615,172 @@ def get_rules_rows(session_id: Optional[str] = None) -> list[dict]:
             return rows
 
 
+# Extraction Tasks Database Functions
+def create_extraction_task(task_id: str, session_id: str, task_type: str, extractor_type: str, message_limit: int = 50) -> bool:
+    """Create a new extraction task."""
+    with get_connection() as conn:
+        try:
+            conn.execute("""
+                INSERT INTO extraction_tasks
+                (task_id, session_id, task_type, extractor_type, message_limit)
+                VALUES (?, ?, ?, ?, ?)
+            """, (task_id, session_id, task_type, extractor_type, message_limit))
+            return True
+        except Exception as e:
+            print(f"Error creating extraction task: {e}")
+            return False
+
+
+def update_extraction_task_status(task_id: str, status: str, progress: float = 0.0,
+                                  current_step: str = None, current_step_num: int = 0,
+                                  total_steps: int = 0, error: str = None) -> bool:
+    """Update extraction task status."""
+    with get_connection() as conn:
+        try:
+            # Build update query dynamically
+            updates = ["status = ?", "progress = ?"]
+            params = [status, progress]
+
+            if status == "running":
+                updates.append("started_at = CURRENT_TIMESTAMP")
+            elif status in ["completed", "failed"]:
+                updates.append("completed_at = CURRENT_TIMESTAMP")
+
+            if current_step is not None:
+                updates.append("current_step = ?")
+                params.append(current_step)
+
+            if current_step_num > 0:
+                updates.append("current_step_num = ?")
+                params.append(current_step_num)
+
+            if total_steps > 0:
+                updates.append("total_steps = ?")
+                params.append(total_steps)
+
+            if error is not None:
+                updates.append("error = ?")
+                params.append(error)
+
+            params.append(task_id)
+
+            query = f"UPDATE extraction_tasks SET {', '.join(updates)} WHERE task_id = ?"
+            conn.execute(query, params)
+            return True
+        except Exception as e:
+            print(f"Error updating extraction task: {e}")
+            return False
+
+
+def save_extraction_result(task_id: str, result_data: dict) -> bool:
+    """Save extraction result to database."""
+    with get_connection() as conn:
+        try:
+            import json
+            conn.execute("""
+                UPDATE extraction_tasks
+                SET result_data = ?, has_result = TRUE
+                WHERE task_id = ?
+            """, (json.dumps(result_data), task_id))
+            return True
+        except Exception as e:
+            print(f"Error saving extraction result: {e}")
+            return False
+
+
+def get_extraction_tasks(session_id: str) -> List[dict]:
+    """Get all extraction tasks for a session."""
+    with get_connection() as conn:
+        try:
+            cur = conn.execute("""
+                SELECT task_id, session_id, task_type, extractor_type, status, progress,
+                       current_step, current_step_num, total_steps, error, has_result,
+                       created_at, started_at, completed_at
+                FROM extraction_tasks
+                WHERE session_id = ?
+                ORDER BY created_at DESC
+            """, (session_id,))
+
+            tasks = []
+            for row in cur.fetchall():
+                task = {
+                    "task_id": row[0],
+                    "session_id": row[1],
+                    "task_type": row[2],
+                    "extractor_type": row[3],
+                    "status": row[4],
+                    "progress": row[5] or 0.0,
+                    "current_step": row[6],
+                    "current_step_num": row[7] or 0,
+                    "total_steps": row[8] or 0,
+                    "error": row[9],
+                    "has_result": bool(row[10]),
+                    "created_at": row[11],
+                    "started_at": row[12],
+                    "completed_at": row[13]
+                }
+                tasks.append(task)
+
+            return tasks
+        except Exception as e:
+            print(f"Error getting extraction tasks: {e}")
+            return []
+
+def get_extraction_task_by_id(task_id: str) -> Optional[dict]:
+    """Get a specific extraction task by task_id."""
+    with get_connection() as conn:
+        try:
+            cur = conn.execute("""
+                SELECT task_id, session_id, task_type, extractor_type, status, progress,
+                       current_step, current_step_num, total_steps, error, has_result,
+                       created_at, started_at, completed_at
+                FROM extraction_tasks
+                WHERE task_id = ?
+            """, (task_id,))
+
+            row = cur.fetchone()
+            if row:
+                task = {
+                    "task_id": row[0],
+                    "session_id": row[1],
+                    "task_type": row[2],
+                    "extractor_type": row[3],
+                    "status": row[4],
+                    "progress": row[5] or 0.0,
+                    "current_step": row[6],
+                    "current_step_num": row[7] or 0,
+                    "total_steps": row[8] or 0,
+                    "error": row[9],
+                    "has_result": bool(row[10]),
+                    "created_at": row[11],
+                    "started_at": row[12],
+                    "completed_at": row[13]
+                }
+                return task
+            return None
+        except Exception as e:
+            print(f"Error getting extraction task by ID: {e}")
+            return None
+
+
+def get_extraction_result(task_id: str) -> dict | None:
+    """Get extraction result for a task."""
+    with get_connection() as conn:
+        try:
+            cur = conn.execute("""
+                SELECT result_data
+                FROM extraction_tasks
+                WHERE task_id = ? AND has_result = TRUE
+            """, (task_id,))
+
+            row = cur.fetchone()
+            if row and row[0]:
+                import json
+                return json.loads(row[0])
+
+            return None
+        except Exception as e:
+            print(f"Error getting extraction result: {e}")
+            return None
+
+

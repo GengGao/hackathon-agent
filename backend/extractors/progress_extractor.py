@@ -20,7 +20,11 @@ class ProgressExtractor(BaseExtractor):
         self.extraction_config = {**LANGEXTRACT_CONFIG, **(config or {})}
 
     def extract(self, text: str, **kwargs) -> List[Dict[str, Any]]:
-        """Extract progress information using LangExtract."""
+        """Extract progress information using LangExtract with caching."""
+        return self._cached_extract(text, **kwargs)
+
+    def _extract_langextract(self, text: str, **kwargs) -> List[Dict[str, Any]]:
+        """Perform LangExtract progress extraction without caching."""
         try:
             import langextract as lx
 
@@ -128,8 +132,8 @@ class ProgressExtractor(BaseExtractor):
         # Combine messages into conversation text
         conversation_parts = []
         for msg in messages:
-            role = msg.get('role', 'unknown')
-            content = msg.get('content', '')
+            role = msg['role'] if 'role' in msg else 'unknown'
+            content = msg['content'] if 'content' in msg else ''
             if content and content.strip():
                 conversation_parts.append(f"{role.title()}: {content}")
 

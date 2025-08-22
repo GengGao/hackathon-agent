@@ -20,7 +20,11 @@ class ConversationExtractor(BaseExtractor):
         self.extraction_config = {**LANGEXTRACT_CONFIG, **(config or {})}
 
     def extract(self, text: str, **kwargs) -> List[Dict[str, Any]]:
-        """Extract conversation insights using LangExtract."""
+        """Extract conversation insights using LangExtract with caching."""
+        return self._cached_extract(text, **kwargs)
+
+    def _extract_langextract(self, text: str, **kwargs) -> List[Dict[str, Any]]:
+        """Perform LangExtract extraction without caching."""
         try:
             import langextract as lx
 
@@ -62,36 +66,43 @@ class ConversationExtractor(BaseExtractor):
         insights = []
         text_lower = text.lower()
 
-        # Define keyword patterns for each category
+        # Debug: Log what we're analyzing
+        logger.debug(f"Fallback analysis of text ({len(text)} chars): {text_lower[:200]}...")
+
+        # Define keyword patterns for each category (expanded for better matching)
         category_patterns = {
             'decisions_made': [
                 'decided', 'let\'s go with', 'we\'ll use', 'agreed', 'final decision',
-                'settled on', 'chose', 'picked', 'selected'
+                'settled on', 'chose', 'picked', 'selected', 'choice', 'chosen'
             ],
             'technologies_chosen': [
-                'react', 'vue', 'angular', 'python', 'javascript', 'fastapi', 'django',
-                'flask', 'nodejs', 'database', 'api', 'framework', 'library'
+                'react', 'vue', 'angular', 'python', 'javascript', 'html', 'css', 'canvas',
+                'fastapi', 'django', 'flask', 'nodejs', 'database', 'api', 'framework',
+                'library', 'web', 'game', 'mini-game', 'offline'
             ],
             'problems_solved': [
                 'fixed', 'solved', 'resolved', 'working now', 'issue resolved',
-                'bug fixed', 'problem solved', 'that worked'
+                'bug fixed', 'problem solved', 'that worked', 'works now'
             ],
             'blockers_encountered': [
                 'blocked', 'stuck', 'can\'t', 'won\'t work', 'failing', 'error',
-                'issue', 'problem', 'trouble', 'broken'
+                'issue', 'problem', 'trouble', 'broken', 'challenge'
             ],
             'next_steps_planned': [
                 'next', 'then', 'after', 'will work on', 'plan to', 'going to',
-                'need to', 'should', 'todo', 'action item'
+                'need to', 'should', 'todo', 'action item', 'step', 'implement',
+                'create', 'build', 'develop', 'make', 'set up', 'add'
             ],
             'requirements_identified': [
                 'requirement', 'must', 'need', 'should', 'constraint', 'rule',
-                'specification', 'criteria'
+                'specification', 'criteria', 'want', 'feature', 'functionality'
             ]
         }
 
         # Analyze text for patterns
         sentences = text.split('.')
+        logger.debug(f"Analyzing {len(sentences)} sentences for patterns")
+
         for sentence in sentences:
             sentence = sentence.strip()
             if len(sentence) < 10:  # Skip very short sentences
@@ -103,6 +114,8 @@ class ConversationExtractor(BaseExtractor):
             for category, patterns in category_patterns.items():
                 matches = sum(1 for pattern in patterns if pattern in sentence_lower)
                 if matches > 0:
+                    logger.debug(f"Found {matches} pattern matches for '{category}' in: {sentence[:100]}...")
+
                     insight = {
                         'text': sentence,
                         'category': category,
@@ -128,8 +141,14 @@ class ConversationExtractor(BaseExtractor):
         # Combine messages into conversation text
         conversation_parts = []
         for msg in messages:
-            role = msg.get('role', 'unknown')
-            content = msg.get('content', '')
+            # Handle sqlite3.Row objects
+            if hasattr(msg, 'keys'):  # sqlite3.Row object
+                role = msg['role'] if 'role' in msg.keys() else 'unknown'
+                content = msg['content'] if 'content' in msg.keys() else ''
+            else:  # Dictionary object
+                role = msg.get('role', 'unknown')
+                content = msg.get('content', '')
+
             if content and content.strip():
                 conversation_parts.append(f"{role.title()}: {content}")
 

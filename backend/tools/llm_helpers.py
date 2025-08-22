@@ -11,7 +11,7 @@ def _shorten(text: str, limit: int = 220) -> str:
     return (text[: limit - 3] + "...") if len(text) > limit else text
 
 
-def _build_conversation_snippets(messages: List[Dict[str, Any]], max_messages: int = 20) -> List[str]:
+def _build_conversation_snippets(messages: List[Dict[str, Any]], max_messages: int = 20, extraction_results: Optional[Dict[str, Any]] = None) -> List[str]:
     def _get_message_field(msg: Any, key: str, default: str = "") -> str:
         if isinstance(msg, dict):
             return str(msg.get(key, default))
@@ -21,6 +21,38 @@ def _build_conversation_snippets(messages: List[Dict[str, Any]], max_messages: i
             return default
 
     snippets: List[str] = []
+
+    # If extraction results are available, add structured insights first
+    if extraction_results and isinstance(extraction_results, dict):
+        # Add key decisions if available
+        if "key_decisions" in extraction_results and extraction_results["key_decisions"]:
+            snippets.append("📋 **Key Decisions from Analysis:**")
+            for decision in extraction_results["key_decisions"][:3]:  # Limit to top 3
+                if isinstance(decision, dict) and "decision" in decision:
+                    snippets.append(f"  • {decision['decision']}")
+            snippets.append("")  # Add spacing
+
+        # Add current blockers if available
+        if "current_blockers" in extraction_results and extraction_results["current_blockers"]:
+            snippets.append("⚠️ **Current Blockers:**")
+            for blocker in extraction_results["current_blockers"][:2]:  # Limit to top 2
+                if isinstance(blocker, dict) and "blocker" in blocker:
+                    snippets.append(f"  • {blocker['blocker']}")
+            snippets.append("")  # Add spacing
+
+        # Add technologies chosen if available
+        if "technologies_chosen" in extraction_results and extraction_results["technologies_chosen"]:
+            snippets.append("🛠️ **Technologies Chosen:**")
+            tech_list = []
+            for tech in extraction_results["technologies_chosen"][:5]:  # Limit to top 5
+                if isinstance(tech, dict) and "text" in tech:
+                    tech_list.append(tech["text"])
+            if tech_list:
+                snippets.append(f"  • {', '.join(tech_list)}")
+                snippets.append("")  # Add spacing
+
+    # Add recent conversation messages
+    snippets.append("💬 **Recent Conversation:**")
     for msg in messages[-max_messages:]:
         role = _get_message_field(msg, "role", "user")
         raw_content = _get_message_field(msg, "content", "").strip()
@@ -28,6 +60,7 @@ def _build_conversation_snippets(messages: List[Dict[str, Any]], max_messages: i
         if not content:
             continue
         snippets.append(f"- {role}: {content}")
+
     return snippets
 
 

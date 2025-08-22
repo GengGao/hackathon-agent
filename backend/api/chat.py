@@ -75,7 +75,7 @@ async def chat_stream(
     try:
         session_row = get_chat_session(session_id)
         has_title = bool(
-            session_row and (session_row["title"] or (hasattr(session_row, "get") and session_row.get("title")))
+            session_row and session_row["title"]
         )
         if not has_title:
             threading.Thread(target=lambda: generate_chat_title(session_id), daemon=True).start()
@@ -163,7 +163,7 @@ async def chat_stream(
             try:
                 session_row2 = get_chat_session(session_id)
                 has_title2 = bool(
-                    session_row2 and (session_row2["title"] or (hasattr(session_row2, "get") and session_row2.get("title")))
+                    session_row2 and session_row2["title"]
                 )
                 if not has_title2:
                     threading.Thread(target=lambda: generate_chat_title(session_id), daemon=True).start()

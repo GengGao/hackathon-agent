@@ -545,28 +545,32 @@ h6 {
 /* Context input sizing fixes */
 .context-textarea {
   width: 100%;
-  min-height: 180px;
-  padding: 0.75rem 0.875rem;
+  min-height: 120px;
+  max-height: 160px;
+  padding: 0.5rem 0.75rem;
   border-radius: 0.5rem;
   line-height: 1.4;
   resize: vertical;
   flex-shrink: 0;
+  font-size: 0.875rem;
 }
 
 @media (min-width: 768px) {
   .context-textarea {
-    min-height: 220px;
+    min-height: 140px;
+    max-height: 180px;
   }
 }
 
 .context-button {
   width: 100%;
-  height: 48px;
+  height: 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 0.5rem;
   flex-shrink: 0;
+  font-size: 0.875rem;
 }
 
 .rule-chunks {
