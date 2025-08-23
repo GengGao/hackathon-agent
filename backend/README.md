@@ -91,7 +91,7 @@ Key steps:
 
 1. **Load Rules** – `docs/rules.txt` (or a replacement file) is read once at startup or when the file is updated.
 2. **Chunking** – Simple blank‑line grouping (fast). Future work: semantic split & token‑length capping.
-3. **Embedding** – Each chunk is encoded with MiniLM (`sentence-transformers/all-MiniLM-L6-v2`).
+3. **Embedding** – Each chunk is encoded with MiniLM (`sentence-transformers/all-MiniLM-L6-v2`) or (`sentence-transformers/paraphrase-MiniLM-L3-v2`).
    - Vectors are L2‑normalised so that cosine similarity reduces to a dot product.
 4. **Caching** – The embeddings and the FAISS index are serialised to `data/embeddings/` keyed by a SHA‑256 hash of the rules file.
    - On startup, if a cache file exists for the current hash, it is loaded; otherwise embeddings are recomputed and the cache written.

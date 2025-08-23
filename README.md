@@ -62,7 +62,7 @@ Planned (near term): export submission pack ZIP; code scaffold tool; auto summar
 ---
 ## 5. Local Model & Embeddings
 - Default LLM: `gpt-oss:20b` (switchable to other installed `gpt-oss:*` models)
-- Embedding model: `all-MiniLM-L6-v2` (downloaded once; cached locally)
+- Embedding model: `all-MiniLM-L6-v2` or `paraphrase-MiniLM-L3-v2` (downloaded once; cached locally)
 - No remote OpenAI calls: `AsyncOpenAI` base URL is loopback → Ollama
 
 ---
