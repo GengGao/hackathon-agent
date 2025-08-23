@@ -34,6 +34,9 @@ current_model = OLLAMA_MODEL if current_provider == "ollama" else LMSTUDIO_MODEL
 # HTTP client (OpenAI-compatible) created per-provider
 client: Optional[AsyncOpenAI] = None
 
+# Debug streaming disabled by default; enable with DEBUG_STREAM=1/true/yes
+DEBUG_STREAM = os.getenv("DEBUG_STREAM", "0").lower() in ("1", "true", "yes")
+
 async def initialize_models():
     """Initialize available models on startup and attempt to restore persisted selection."""
     # recreate client from persisted provider/base_url if present
@@ -94,9 +97,6 @@ def create_client_for_current_provider(base_url: Optional[str] = None) -> AsyncO
 
 # Create initial client
 create_client_for_current_provider()
-
-# Debug streaming disabled by default; enable with DEBUG_STREAM=1/true/yes
-DEBUG_STREAM = os.getenv("DEBUG_STREAM", "0").lower() in ("1", "true", "yes")
 
 async def generate_stream(
     prompt: str,
@@ -335,6 +335,8 @@ async def generate_stream(
             else:
                 break
 
+        # Signal end of stream
+        yield {"type": "end"}
         return
 
     except Exception as e:
