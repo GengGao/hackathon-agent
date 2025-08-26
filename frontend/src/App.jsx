@@ -30,19 +30,6 @@ function App() {
 		generateTechStack,
 		generateSubmissionNotes,
 	} = useDashboard(currentSessionId);
-	const {
-		messages,
-		setMessages,
-		isTyping,
-		setIsTyping,
-		sendMessage,
-		stopGeneration,
-	} = useChat({
-		currentSessionId,
-		uploadedFiles,
-		urlText,
-		setCurrentSessionId,
-	});
 
 	// Helper component was extracted to components/SkeletonText
 
@@ -60,6 +47,21 @@ function App() {
 		await refreshDashboard();
 		setTodosRefreshKey((prev) => prev + 1);
 	}, [refreshDashboard]);
+
+	const {
+		messages,
+		setMessages,
+		isTyping,
+		setIsTyping,
+		sendMessage,
+		stopGeneration,
+	} = useChat({
+		currentSessionId,
+		uploadedFiles,
+		urlText,
+		setCurrentSessionId,
+		onDashboardRefresh: refreshDashboardWithKey,
+	});
 
 	// Ensure a session exists even for a brand-new chat before adding context
 	useEffect(() => {

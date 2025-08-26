@@ -5,6 +5,7 @@ const useChat = ({
 	uploadedFiles,
 	urlText,
 	setCurrentSessionId,
+	onDashboardRefresh,
 }) => {
 	const [messages, setMessages] = useState([]);
 	const [isTyping, setIsTyping] = useState(false);
@@ -118,6 +119,16 @@ const useChat = ({
 							});
 						} else if (data.type === "end") {
 							setIsTyping(false);
+							// Check if the last message has tool calls and refresh dashboard
+							const lastMessage = messages[messages.length - 1];
+							if (
+								lastMessage &&
+								lastMessage.role === "assistant" &&
+								lastMessage.tool_calls &&
+								lastMessage.tool_calls.length > 0
+							) {
+								onDashboardRefresh?.();
+							}
 						}
 					} catch (err) {
 						console.error("Failed to parse SSE event", err, rawEvent);
@@ -168,7 +179,14 @@ const useChat = ({
 				setAbortController(null);
 			}
 		},
-		[currentSessionId, uploadedFiles, urlText, setCurrentSessionId],
+		[
+			currentSessionId,
+			uploadedFiles,
+			urlText,
+			setCurrentSessionId,
+			onDashboardRefresh,
+			messages,
+		],
 	);
 
 	const stopGeneration = useCallback(() => {
