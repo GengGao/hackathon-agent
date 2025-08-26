@@ -19,7 +19,7 @@ Hackathon teams lose disproportionate time structuring ideas, tracking progress,
 ---
 ## 2. What It Does (Feature Summary)
 - 🚀 **Complete One-Liner Setup & Run**: Run one command → HackathonHero opens in browser ready to use!
-- 🔁 **Streaming Local LLM** (gpt-oss via Ollama) with thinking + tool call transparency (SSE)
+- 🔁 **Streaming Local LLM** (gpt-oss via Ollama or LM Studio) with thinking + tool call transparency (SSE)
 - 📜 **Rules-Aware RAG**: chunk + embed rulebook; retrieve top‑k context per query; cached embeddings for warm starts
 - ✅ **Intelligent Todo System**: status cycle (pending → in_progress → done), agent adds tasks via function calls, session-scoped
 - 🧠 **Artifact Generation**: derive project idea, recommended tech stack, submission summary from chat history
@@ -35,9 +35,11 @@ Hackathon teams lose disproportionate time structuring ideas, tracking progress,
 ## 3. Category Alignment
 | Category | Fit | Notes |
 |----------|-----|-------|
-| Best Local Agent | Strong | Purely local inference + RAG + agentic tool calls |
-| For Humanity | Supportive | Enables teams in low‑connectivity environments to iterate & prepare submissions |
+| Best Local Agent | **Primary** | Purely local inference + RAG + agentic tool calls + complete automation |
+| For Humanity | **Secondary** | Enables teams in low‑connectivity environments + democratizes AI education |
 | Wildcard | Possible | If autonomous planning / export pack innovation is emphasized |
+
+📋 **Detailed Justifications**: See [CATEGORY_JUSTIFICATION.md](./CATEGORY_JUSTIFICATION.md) for comprehensive category justifications with technical details and strategic positioning.
 
 ---
 ## 4. Architecture Overview
@@ -240,7 +242,7 @@ Immediate targets:
 - [ ] LICENSE file present (MIT)
 - [ ] 3‑minute demo video (offline proof + tool calls visible)
 - [ ] Screenshots (Chat, Todos, RAG retrieval, Artifacts)
-- [ ] Category justification paragraph
+- [ ] Category justification paragraph (see [CATEGORY_JUSTIFICATION.md](./CATEGORY_JUSTIFICATION.md))
 - [ ] Model usage & offline explanation
 - [ ] Clear run instructions (verified on fresh machine) - includes one-liner setup scripts for MacOS/Linux/Windows
 
