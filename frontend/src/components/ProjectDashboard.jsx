@@ -1,5 +1,4 @@
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { Streamdown } from "streamdown";
 import SkeletonText from "./SkeletonText";
 import TodoManager from "./TodoManager";
 
@@ -93,9 +92,15 @@ export default function ProjectDashboard({
 							{isStreamingIdea && !dashboardData?.idea ? (
 								<SkeletonText lines={4} />
 							) : (
-								<ReactMarkdown remarkPlugins={[remarkGfm]}>
+								<Streamdown
+									parseIncompleteMarkdown={true}
+									className="text-readable-light"
+									allowedImagePrefixes={["*"]}
+									allowedLinkPrefixes={["*"]}
+									shikiTheme={["github-light", "github-dark"]}
+								>
 									{dashboardData?.idea}
-								</ReactMarkdown>
+								</Streamdown>
 							)}
 						</p>
 					</div>
@@ -120,9 +125,15 @@ export default function ProjectDashboard({
 							{isStreamingStack && !dashboardData?.stack ? (
 								<SkeletonText lines={4} />
 							) : (
-								<ReactMarkdown remarkPlugins={[remarkGfm]}>
+								<Streamdown
+									parseIncompleteMarkdown={true}
+									className="text-readable-light"
+									allowedImagePrefixes={["*"]}
+									allowedLinkPrefixes={["*"]}
+									shikiTheme={["github-light", "github-dark"]}
+								>
 									{dashboardData?.stack}
-								</ReactMarkdown>
+								</Streamdown>
 							)}
 						</p>
 					</div>
@@ -158,9 +169,15 @@ export default function ProjectDashboard({
 							{isStreamingSummary && !dashboardData?.submission ? (
 								<SkeletonText lines={6} />
 							) : (
-								<ReactMarkdown remarkPlugins={[remarkGfm]}>
+								<Streamdown
+									parseIncompleteMarkdown={true}
+									className="text-readable-light"
+									allowedImagePrefixes={["*"]}
+									allowedLinkPrefixes={["*"]}
+									shikiTheme={["github-light", "github-dark"]}
+								>
 									{dashboardData?.submission}
-								</ReactMarkdown>
+								</Streamdown>
 							)}
 						</p>
 					</div>
