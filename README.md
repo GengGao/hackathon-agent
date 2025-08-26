@@ -238,13 +238,13 @@ Immediate targets:
 
 ---
 ## 14. Devpost Submission Checklist
-- [ ] Public repo with this README
-- [ ] LICENSE file present (MIT)
+- [x] Public repo with this README
+- [x] LICENSE file present (MIT)
 - [ ] 3‑minute demo video (offline proof + tool calls visible)
-- [ ] Screenshots (Chat, Todos, RAG retrieval, Artifacts)
-- [ ] Category justification paragraph (see [CATEGORY_JUSTIFICATION.md](./CATEGORY_JUSTIFICATION.md))
-- [ ] Model usage & offline explanation
-- [ ] Clear run instructions (verified on fresh machine) - includes one-liner setup scripts for MacOS/Linux/Windows
+- [x] Screenshots (Chat, Todos, RAG retrieval, Artifacts)
+- [x] Category justification paragraph (see [CATEGORY_JUSTIFICATION.md](./CATEGORY_JUSTIFICATION.md))
+- [x] Model usage & offline explanation (see [MODEL_USAGE_OFFLINE.md](./MODEL_USAGE_OFFLINE.md))
+- [x] Clear run instructions (verified on fresh machine) - includes one-liner setup scripts for MacOS/Linux/Windows
 
 ---
 ## 15. Testing
