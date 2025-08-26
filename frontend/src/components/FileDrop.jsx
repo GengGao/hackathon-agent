@@ -61,7 +61,7 @@ export default function FileDrop({ uploadedFiles, setUploadedFiles }) {
 		>
 			<div className="relative mb-4">
 				<i className="fas fa-cloud-upload-alt text-5xl gradient-text" />
-				<div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-purple-500 rounded-full blur-lg opacity-30" />
+				<div className="absolute inset-0 bg-gradient-to-r from-blue-400 to-green-800 rounded-full blur-lg opacity-30" />
 			</div>
 			<p className="font-semibold text-readable-dark mb-1">Drag & Drop Files</p>
 			<p className="text-xs text-readable-light mb-2">
