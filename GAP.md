@@ -26,7 +26,7 @@ Status: planned | in_progress | done | deferred
 | G-004 | P1 | deferred | Observability | JSON logs + minimal `/api/health` counters |
 | G-005 | P1 | done | Security | Harden URL ingestion (redirect cap, stricter mime) |
 | G-006 | P1 | deferred | UI | Rule chunk highlight and mapping in answers |
-| G-007 | P1 | deferred | UI | Artifact management panel (list/view/download) |
+| G-007 | P1 | done | UI | Artifact management panel (list/view/download) |
 | G-008 | P1 | deferred | Perf | Model benchmark script (latency/tokens/sec/memory) |
 | G-009 | P1 | deferred | Memory | Rolling chat summarization to cap prompt size |
 | G-010 | P2 | deferred | Retrieval | Token-aware/semantic chunking with overlap |
@@ -59,8 +59,8 @@ Now enforces: redirect cap (≤3), HEAD size/mime guard, stricter MIME allowlist
 #### G-006 – Rule Chunk Highlight (P1)
 Current: UI shows a separate "Referenced rules" list using chunk texts. Target: emit stable chunk IDs in SSE and render inline refs like [R3] with side panel mapping.
 
-#### G-007 – Artifact Panel (P1)
-Current: Dashboard lists and generates artifacts; backend exposes `GET /api/chat-sessions/{id}/project-artifacts` and `GET /api/chat-sessions/{id}/project-artifacts/{type}`. Target: add copy/download actions in UI and stream/download endpoints for individual artifacts.
+#### G-007 – Artifact Panel (P1, done)
+Implemented: ProjectDashboard component provides artifact generation, streaming display, and export functionality. Backend exposes complete artifact management via `/api/chat-sessions/{id}/project-artifacts` endpoints with ZIP export capability.
 
 #### G-008 – Model Benchmarks (P1)
 `scripts/benchmark_models.py` stores results to `data/benchmarks/*.json` and updates README table.
@@ -93,10 +93,11 @@ Acceptance: When the backend emits `tool_calls` and later the assistant message 
 
 ---
 ### Closed
-- G-001:  Submission ZIP pack
+- G-001: Submission ZIP pack
 - G-002: Embedding cache persistence keyed by rules hash
 - G-003: SSE ordering test
 - G-005: URL Ingestion Hardening
+- G-007: Artifact management panel (ProjectDashboard with generation & export)
 - G-012: Multi-round tool planning loop
 - G-014: PWA offline app shell (vite-plugin-pwa, manifest, runtime caching)
 

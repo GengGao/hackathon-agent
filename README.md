@@ -14,22 +14,22 @@
 ## 1. Problem & Motivation
 Hackathon teams lose disproportionate time structuring ideas, tracking progress, and assembling submission artifacts (idea, tech stack, summary) — especially in bandwidth‑constrained or privacy‑sensitive settings. Online AI tools introduce latency, data exposure, and sometimes go down during crunch time.
 
-**HackathonHero** provides an end‑to‑end, *fully local* assistant: ingest rules & files → brainstorm with a reasoning‑capable model → auto‑derive project idea / tech stack → maintain todos → summarize & (soon) export a ready submission pack — all without external API calls once models are pulled.
+**HackathonHero** provides an end‑to‑end, *fully local* assistant: ingest rules & files → brainstorm with a reasoning‑capable model → auto‑derive project idea / tech stack → maintain todos → export a ready submission pack — all without external API calls once models are pulled.
 
 ---
 ## 2. What It Does (Feature Summary)
+- 🚀 **Complete One-Liner Setup & Run**: Run one command → HackathonHero opens in browser ready to use!
 - 🔁 **Streaming Local LLM** (gpt-oss via Ollama) with thinking + tool call transparency (SSE)
 - 📜 **Rules-Aware RAG**: chunk + embed rulebook; retrieve top‑k context per query; cached embeddings for warm starts
-- ✅ **Intelligent Todo System**: status cycle (pending → in_progress → done), priorities, agent adds tasks via function calls
+- ✅ **Intelligent Todo System**: status cycle (pending → in_progress → done), agent adds tasks via function calls, session-scoped
 - 🧠 **Artifact Generation**: derive project idea, recommended tech stack, submission summary from chat history
 - 📎 **Multi-File & URL Text Ingestion**: txt / md / pdf / docx / images (OCR) with size & extension guards
-- 🧰 **Tool Calling Interface**: LLM invokes structured functions (todos, directory listing, artifact generation)
+- 🧰 **Tool Calling Interface**: LLM invokes structured functions (todos, directory listing, artifact generation, session management)
 - 📴 **Offline-First**: after local model + embedding download, zero outward network dependency
-- 🗂 **SQLite + Migrations**: reproducible state, artifacts persisted per chat session
-- 🗺 **Gap Register (GAP.md)**: transparent roadmap & prioritization
-- 🧩 **PWA App Shell**: service worker with runtime caching via vite-plugin-pwa
-
-Planned (near term): export submission pack ZIP; code scaffold tool; auto summarization triggers; light auth/rate limiting.
+- 🗂 **SQLite + Migrations**: reproducible state, artifacts persisted per chat session with 7 migrations
+- 📦 **Complete Export System**: One-click ZIP generation with idea.md, tech_stack.md, summary.md, todos.json, rules_ingested.txt, session_metadata.json
+- 🗺 **Gap Register (GAP.md)**: transparent roadmap & prioritization with 6/16 gaps completed
+- 🧩 **PWA App Shell**: service worker with runtime caching via vite-plugin-pwa, offline-capable
 
 ---
 ## 3. Category Alignment
@@ -67,9 +67,48 @@ Planned (near term): export submission pack ZIP; code scaffold tool; auto summar
 
 ---
 ## 6. Quick Start
-### Prerequisites
+
+### 🚀 One-Liner Setup & Run (Recommended for Hackathons)
+Choose your platform and run the complete automated setup script:
+
+#### MacOS
+```bash
+curl -fsSL https://raw.githubusercontent.com/genggao/hackathon-agent/main/setup-macos.sh | bash
+```
+
+#### Linux (Ubuntu/Debian/CentOS/Arch)
+```bash
+curl -fsSL https://raw.githubusercontent.com/genggao/hackathon-agent/main/setup-linux.sh | bash
+```
+
+#### Windows (PowerShell as Administrator)
+```powershell
+# Download and run the setup script
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/genggao/hackathon-agent/main/setup-windows.ps1" -OutFile "setup-windows.ps1"
+.\setup-windows.ps1
+```
+
+**What these scripts do (COMPLETE automation):**
+- ✅ Install Python 3.11+, Node.js 22+, Tesseract OCR
+- ✅ Install and configure Ollama
+- ✅ Clone the HackathonHero repository
+- ✅ Set up backend virtual environment and dependencies
+- ✅ Set up frontend dependencies
+- ✅ Initialize the database
+- ✅ **AUTO-START Ollama service**
+- ✅ **AUTO-DOWNLOAD default model (gpt-oss:20b)**
+- ✅ **AUTO-START backend server (http://localhost:8000)**
+- ✅ **AUTO-START frontend server (http://localhost:5173)**
+- ✅ **AUTO-OPEN browser to HackathonHero**
+
+**Result:** After running the script, HackathonHero opens automatically in your browser - ready to use! 🎉
+
+---
+
+### Manual Setup
+#### Prerequisites
 - Python 3.11+
-- Node 18+
+- Node.js 22+
 - Tesseract OCR (for image text extraction)
   - macOS: `brew install tesseract`
   - Ubuntu/Debian: `sudo apt-get update && sudo apt-get install -y tesseract-ocr`
@@ -134,7 +173,7 @@ Models and embeddings download once and are cached locally. If Ollama is not ava
 | `summarize_chat_history` | Submission summary | session_id |
 | `generate_chat_title` | Auto title the session | session_id, force? |
 
-Planned: `export_submission_pack`, `scaffold_code`, `auto_summarize`.
+Planned: `scaffold_code`, `auto_summarize`.
 
 ---
 ## 9. Retrieval Augmented Generation (RAG)
@@ -180,13 +219,20 @@ Script (planned) will capture and record these locally for transparency.
 
 ---
 ## 13. Roadmap Snapshot
-See [GAP.md](./GAP.md) for full prioritized list (P0→P3). Immediate targets:
-- [x] PWA offline app shell (done)
-- [ ] Submission pack export
-- [ ] Artifact download endpoints
-- [ ] Model benchmarking script
-- [ ] Embedding cache (tests + perf targets)
- - [ ] Tool call results displayed inline in UI
+See [GAP.md](./GAP.md) for full prioritized list (P0→P3). Current status:
+- [x] PWA offline app shell (G-014 done)
+- [x] Submission pack export (G-001 done)
+- [x] Embedding cache persistence (G-002 done)
+- [x] SSE stream ordering test (G-003 done)
+- [x] URL ingestion hardening (G-005 done)
+- [x] Multi-round tool planning loop (G-012 done)
+
+Immediate targets:
+- [ ] Rule chunk highlight in UI (G-006)
+- [ ] Artifact management panel (G-007)
+- [ ] Model benchmarking script (G-008)
+- [ ] Rolling chat summarization (G-009)
+- [ ] Tool call results inline in UI (G-016)
 
 ---
 ## 14. Devpost Submission Checklist
@@ -196,7 +242,7 @@ See [GAP.md](./GAP.md) for full prioritized list (P0→P3). Immediate targets:
 - [ ] Screenshots (Chat, Todos, RAG retrieval, Artifacts)
 - [ ] Category justification paragraph
 - [ ] Model usage & offline explanation
-- [ ] Clear run instructions (verified on fresh machine)
+- [ ] Clear run instructions (verified on fresh machine) - includes one-liner setup scripts for MacOS/Linux/Windows
 
 ---
 ## 15. Testing
@@ -213,7 +259,7 @@ Planned: integration test for SSE streaming + tool call event frames; export pac
 - Heuristic artifact extraction (no semantic clustering yet)
 - Retrieval scoring unnormalized (affects ordering for heterogeneous chunk lengths)
 - No multi-user isolation / auth
-- No export pack (in progress)
+
 - Embeddings recomputed each rules update (sync) — large files slow startup
 
 ---
@@ -221,11 +267,11 @@ Planned: integration test for SSE streaming + tool call event frames; export pac
 | Area | Enhancement |
 |------|-------------|
 | Autonomy | Iterative planning loop that converts brainstorming into prioritized roadmap automatically |
-| Export | One-click submission ZIP (idea.md, tech_stack.md, summary.md, todos.json, rules_ingested.txt) |
+
 | Code Gen | Safe scoped code scaffold + diff/preview tool |
 | Memory | Rolling summarization to keep prompt small |
 | UI | Accessibility (ARIA), theming toggle, mobile optimization |
-| Offline UX | PWA caching & queued actions |
+
 | Observability | Structured JSON logs, basic Prometheus metrics |
 | Fine-tune | Domain-adapted lightweight adapter for mentor tone |
 

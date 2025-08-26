@@ -2,30 +2,36 @@
 
 React + Vite UI powering the local hackathon assistant.
 
-> Provides chat interface (SSE streaming with reasoning + tool call visualization), todo management, and (upcoming) artifact panel & export controls.
+> Provides chat interface (SSE streaming with reasoning + tool call visualization), artifact generation & management, todo system, and complete export functionality.
 
 ---
 ## Stack
 | Aspect | Tech | Notes |
 |--------|------|-------|
-| Framework | React 18 + Vite | Fast dev HMR |
-| Styling | Tailwind CSS | Utility-first styling |
-| Markdown Render | `react-markdown` + `remark-gfm` | Tables, lists, code formatting |
-| Syntax Highlight | `react-syntax-highlighter` (Prism) | Highlights model code outputs |
-| HTTP | Fetch | SSE & REST calls |
-| State | Local component state | Simple, no global store yet |
+| Framework | React 19 + Vite | Latest React with fast HMR |
+| Build Tool | Vite 7.0.4 | ES modules, optimized builds |
+| Styling | Tailwind CSS 3.4.17 | Utility-first with custom gradients |
+| Markdown Render | `streamdown` 1.1.3 | Streaming markdown with syntax highlighting |
+| HTTP | Fetch API | Native SSE & REST calls |
+| State | Custom hooks + local state | `useChat`, `useDashboard`, `useOllama`, `useRag` |
+| PWA | `vite-plugin-pwa` 1.0.2 | Service worker with runtime caching |
+| Linting | ESLint 9.30.1 | React hooks + refresh plugins |
 
 ---
 ## Key Components
 | File | Role |
 |------|------|
-| `App.jsx` | Layout, orchestrates panels |
-| `components/ChatBox.jsx` | Streaming chat UI + reasoning + tool call sections |
-| `components/ChatHistory.jsx` | Session list (extend / paginate) |
-| `components/TodoManager.jsx` | Todos (status cycle, priority) |
-| `components/FileDrop.jsx` | Drag/drop multi-file upload |
+| `App.jsx` | Main app layout with three-panel design (left: context/history, center: chat, right: dashboard) |
+| `components/ChatBox.jsx` | Streaming chat UI with SSE handling, reasoning display, tool call visualization using Streamdown |
+| `components/ChatHistory.jsx` | Session management with CRUD operations, title editing, and session switching |
+| `components/ContextPanel.jsx` | RAG status monitoring, file/URL ingestion with drag & drop support |
+| `components/ProjectDashboard.jsx` | Artifact generation and management, todo system, export functionality |
+| `components/TodoManager.jsx` | Todo CRUD with status cycling (pending→in_progress→done), session-scoped |
+| `components/FileDrop.jsx` | Multi-file upload with drag & drop, file type validation |
+| `components/Header.jsx` | Model switching, provider toggle (Ollama/LMStudio), PWA status |
+| `components/SkeletonText.jsx` | Loading states for streaming content |
 
-Planned: `ArtifactPanel.jsx`, `ExportButton.jsx`.
+All planned components are implemented.
 
 ---
 ## Chat Streaming Protocol
@@ -55,16 +61,26 @@ Render Rules:
 Planned: drag-and-drop ordering, filters, bulk actions.
 
 ---
+## Implemented UI Features
+| Area | Status |
+|------|--------|
+| Artifacts | ✅ Live panel with project idea, tech stack, summary generation & streaming |
+| Export | ✅ One-click ZIP download with complete submission pack |
+| Models | ✅ Dropdown model switching + provider toggle (Ollama/LMStudio) |
+| PWA | ✅ Offline-capable with service worker and runtime caching |
+| Streaming | ✅ Real-time SSE with reasoning, tool calls, and token streaming |
+| Session Management | ✅ Full CRUD with history, titles, and context switching |
+| Todo System | ✅ Status cycling, session-scoped, priority support |
+| File Upload | ✅ Drag & drop multi-file with type validation |
+
 ## Planned UI Enhancements
 | Area | Enhancement |
 |------|-------------|
-| Artifacts | Live panel listing project idea / tech stack / summary with refresh buttons |
-| Export | One-click ZIP download (calls future backend endpoint) |
-| Models | Dropdown to switch gpt-oss model + latency metric |
 | Theming | Light/dark toggle + persisted preference |
-| Accessibility | ARIA roles, focus outlines, keyboard nav review |
-| Mobile | Responsive layout, collapsible side sections |
+| Accessibility | ARIA roles, focus outlines, keyboard navigation |
+| Mobile | Responsive optimization, collapsible side sections |
 | Reasoning | Collapsible reasoning area w/ truncation + copy button |
+| Tool Results | Inline display of tool call execution results |
 
 ---
 ## Local Development

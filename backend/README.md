@@ -82,7 +82,7 @@ Declared in `tools/registry.py` via `get_tool_schemas()` (OpenAI function schema
 3. Ensure `call_tool` resolves your function name.
 4. (Optional) Frontend UI support.
 
-Current tools: todos CRUD (`list_todos`, `add_todo`, `clear_todos`), `list_directory`, artifact generators (`derive_project_idea`, `create_tech_stack`, `summarize_chat_history`), `generate_chat_title`.
+Current tools: todos CRUD (`list_todos`, `add_todo`, `clear_todos`), `list_directory`, artifact generators (`derive_project_idea`, `create_tech_stack`, `summarize_chat_history`), `generate_chat_title`, session management (`get_session_id`).
 
 ---
 ## RAG Pipeline
@@ -203,13 +203,13 @@ Suggested additional tests (open gaps):
 ## Planned Enhancements
 | Area | Plan |
 |------|------|
-| Retrieval | Chunk metadata & highlighting, embedding cache persistence |
-| Export | ZIP pack endpoint with artifacts & todos |
+| Retrieval | Chunk metadata & highlighting |
+
 | Auth | Simple API key / per-session token |
 | Summarization | Automatic rolling memory compression |
 | Tooling | Code scaffold + file write sandbox |
 | Observability | Structured JSON logs & basic metrics |
-| Embeddings | Cache file keyed by rules hash |
+
 
 ---
 ## License

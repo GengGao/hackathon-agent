@@ -31,5 +31,9 @@
   },
   "optionalDependencies": {
     "@rollup/rollup-darwin-arm64": "4.46.2"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
   }
 }
