@@ -47,12 +47,34 @@ def delete_todo(todo_id: int, session_id: Optional[str] = None) -> Dict[str, Any
     return {"ok": ok}
 
 
+# Convenience functions for common status updates
+def mark_todo_done(todo_id: int, session_id: Optional[str] = None) -> Dict[str, Any]:
+    """Mark a specific todo as completed (done)."""
+    ok = update_todo_db(todo_id, status="done", session_id=session_id)
+    return {"ok": ok}
+
+
+def mark_todo_in_progress(todo_id: int, session_id: Optional[str] = None) -> Dict[str, Any]:
+    """Mark a specific todo as in progress."""
+    ok = update_todo_db(todo_id, status="in_progress", session_id=session_id)
+    return {"ok": ok}
+
+
+def mark_todo_pending(todo_id: int, session_id: Optional[str] = None) -> Dict[str, Any]:
+    """Mark a specific todo as pending."""
+    ok = update_todo_db(todo_id, status="pending", session_id=session_id)
+    return {"ok": ok}
+
+
 __all__ = [
     "list_todos",
     "add_todo",
     "clear_todos",
     "update_todo",
     "delete_todo",
+    "mark_todo_done",
+    "mark_todo_in_progress",
+    "mark_todo_pending",
 ]
 
 

@@ -59,6 +59,84 @@ def get_tool_schemas() -> List[Dict[str, Any]]:
         {
             "type": "function",
             "function": {
+                "name": "update_todo",
+                "description": "Update a specific todo item. Can update status ('pending', 'in_progress', 'done'), item text, sort_order, or session_id.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {"type": "integer", "description": "ID of the todo to update"},
+                        "status": {"type": "string", "enum": ["pending", "in_progress", "done"], "description": "New status for the todo"},
+                        "item": {"type": "string", "description": "New text content for the todo"},
+                        "sort_order": {"type": "integer", "description": "New sort order for the todo"},
+                        "session_id": {"type": "string", "description": "Session ID to filter/update the todo"}
+                    },
+                    "required": ["todo_id"]
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "delete_todo",
+                "description": "Delete a specific todo item by ID.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {"type": "integer", "description": "ID of the todo to delete"},
+                        "session_id": {"type": "string", "description": "Session ID to filter the todo"}
+                    },
+                    "required": ["todo_id"]
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "mark_todo_done",
+                "description": "Mark a specific todo item as completed (done).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {"type": "integer", "description": "ID of the todo to mark as done"},
+                        "session_id": {"type": "string", "description": "Session ID to filter the todo"}
+                    },
+                    "required": ["todo_id"]
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "mark_todo_in_progress",
+                "description": "Mark a specific todo item as in progress.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {"type": "integer", "description": "ID of the todo to mark as in progress"},
+                        "session_id": {"type": "string", "description": "Session ID to filter the todo"}
+                    },
+                    "required": ["todo_id"]
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "mark_todo_pending",
+                "description": "Mark a specific todo item as pending.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "todo_id": {"type": "integer", "description": "ID of the todo to mark as pending"},
+                        "session_id": {"type": "string", "description": "Session ID to filter the todo"}
+                    },
+                    "required": ["todo_id"]
+                },
+            },
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "list_directory",
                 "description": "List files and folders within the project directory (safe, relative paths only). when done let user know",
                 "parameters": {
@@ -137,6 +215,31 @@ def call_tool(function_name: str, arguments: Dict[str, Any]) -> Any:
         if function_name == "clear_todos":
             from .todos import clear_todos as fn
             return fn(session_id=arguments.get("session_id"))
+        if function_name == "update_todo":
+            from .todos import update_todo as fn
+            # Extract fields to update
+            fields = {}
+            if "status" in arguments:
+                fields["status"] = arguments["status"]
+            if "item" in arguments:
+                fields["item"] = arguments["item"]
+            if "sort_order" in arguments:
+                fields["sort_order"] = arguments["sort_order"]
+            if "session_id" in arguments:
+                fields["session_id"] = arguments["session_id"]
+            return fn(arguments.get("todo_id", 0), **fields)
+        if function_name == "delete_todo":
+            from .todos import delete_todo as fn
+            return fn(arguments.get("todo_id", 0), session_id=arguments.get("session_id"))
+        if function_name == "mark_todo_done":
+            from .todos import mark_todo_done as fn
+            return fn(arguments.get("todo_id", 0), session_id=arguments.get("session_id"))
+        if function_name == "mark_todo_in_progress":
+            from .todos import mark_todo_in_progress as fn
+            return fn(arguments.get("todo_id", 0), session_id=arguments.get("session_id"))
+        if function_name == "mark_todo_pending":
+            from .todos import mark_todo_pending as fn
+            return fn(arguments.get("todo_id", 0), session_id=arguments.get("session_id"))
         if function_name == "list_directory":
             from .fs import list_directory as fn
             return fn(arguments.get("path", "."))
