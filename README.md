@@ -2,10 +2,12 @@
 
 > Offline, local-first AI agent that turns raw brainstorming + files into a polished hackathon submission pack. NO accounts required.
 
+![Main UI](screenshots/HackathonHero%20Diagram.png)
+
 ---
 ## Quick Links
 - Demo Video (≤3 min): *(add YouTube link before submission)*
-- Live Screens / GIFs: `docs/media/` *(add assets)*
+- Live Screens / Screenshots: `screenshots/` *(see below)*
 - Gap / Roadmap Tracker: [GAP.md](./GAP.md)
 - Primary Category: **Best Local Agent**
 - Secondary Framing: **For Humanity** (equitable offline ideation & submission assistance)
@@ -152,14 +154,23 @@ Models and embeddings download once and are cached locally. If Ollama is not ava
 
 ---
 ## 7. Usage Flow
-1. Start Ollama + backend + frontend.
-2. Add context: upload files or paste text/URLs in the left panel (calls `/api/context/*`). Index status appears live; chat is gated until RAG is ready.
-3. Chat: brainstorm; agent may propose/add todos via tool calls.
-4. Generate artifacts:
+
+![Main Chat Interface](screenshots/HackathonHero%20Chat.png)
+
+1. **Start Services**: Run one-liner setup script → HackathonHero opens in browser automatically
+2. **Add Context**: Upload files or paste text/URLs in the left panel (calls `/api/context/*`). Index status appears live; chat is gated until RAG is ready.
+3. **Chat & Brainstorm**: Use the streaming chat interface; agent may propose/add todos via tool calls.
+
+![Todo Management](screenshots/HackathonHero%20Tools.png)
+
+4. **Generate Artifacts**:
    - `POST /api/chat-sessions/{id}/derive-project-idea`
    - `POST /api/chat-sessions/{id}/create-tech-stack`
    - `POST /api/chat-sessions/{id}/summarize-chat-history`
-5. Review artifacts.
+
+![Project Artifacts](screenshots/HackathonHero%20Artifacts.png)
+
+5. **Review & Export**: Review generated artifacts and export complete submission pack.
 
 ---
 ## 8. Tooling (Function Calls)
@@ -179,13 +190,16 @@ Planned: `scaffold_code`, `auto_summarize`.
 
 ---
 ## 9. Retrieval Augmented Generation (RAG)
-Current:
-- Chunking: split on blank-line groups
-- Index: FAISS cosine (normalized MiniLM embeddings via IndexFlatIP)
-- Query: top‑k=5 similarities (higher = more relevant) returned
-- Caching: embeddings, chunks, and metadata persisted under `backend/data/rag_cache/<rules_hash>/` for warm starts; session-aware scoping
 
-Planned improvements:
+![RAG Context Retrieval](screenshots/HackathonHero%20RAG.png)
+
+**Current Implementation:**
+- **Chunking**: split on blank-line groups
+- **Index**: FAISS cosine (normalized MiniLM embeddings via IndexFlatIP)
+- **Query**: top‑k=5 similarities (higher = more relevant) returned
+- **Caching**: embeddings, chunks, and metadata persisted under `backend/data/rag_cache/<rules_hash>/` for warm starts; session-aware scoping
+
+**Planned Improvements:**
 - Rule chunk highlighting in UI
 
 ---
@@ -247,6 +261,26 @@ Immediate targets:
 - [x] Clear run instructions (verified on fresh machine) - includes one-liner setup scripts for MacOS/Linux/Windows
 
 ---
+
+## 14.1 Screenshots Gallery
+
+### Main Chat Interface
+![Chat Interface](screenshots/HackathonHero%20Chat.png)
+
+### Todo Management & Tools
+![Todo Management](screenshots/HackathonHero%20Tools.png)
+
+### Project Artifacts Generation
+![Project Artifacts](screenshots/HackathonHero%20Artifacts.png)
+
+### RAG Context Retrieval
+![RAG System](screenshots/HackathonHero%20RAG.png)
+
+### System Architecture Diagram
+![Architecture](screenshots/HackathonHero%20Diagram.png)
+
+---
+
 ## 15. Testing
 ```bash
 cd backend
