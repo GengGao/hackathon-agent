@@ -123,29 +123,49 @@ if (-not (Test-Command ollama)) {
     Write-Host "✅ Ollama already installed" -ForegroundColor Green
 }
 
-# Clone repository
-if (-not (Test-Path "hackathon-agent")) {
-    Write-Host "📥 Cloning HackathonHero repository..."
-    git clone https://github.com/genggao/hackathon-agent.git
-    Set-Location hackathon-agent
+# Check if we're already in the repository or need to clone/navigate
+if ((Test-Path "backend\main.py") -and (Test-Path "frontend\package.json")) {
+    Write-Host "✅ Already in HackathonHero repository directory" -ForegroundColor Green
 } else {
-    Write-Host "✅ Repository already cloned" -ForegroundColor Green
-    Set-Location hackathon-agent
+    if (-not (Test-Path "hackathon-agent")) {
+        Write-Host "📥 Cloning HackathonHero repository..."
+        git clone https://github.com/genggao/hackathon-agent.git
+        Set-Location hackathon-agent
+    } else {
+        Write-Host "✅ Repository already cloned" -ForegroundColor Green
+        Set-Location hackathon-agent
+    }
 }
 
 # Setup backend
 Write-Host "🔧 Setting up backend..."
 Set-Location backend
-python -m venv .venv
-& ".\.venv\Scripts\activate.ps1"
-pip install -r requirements.txt
-python -c "from models.db import init_db; init_db()"
+if (-not (Test-Path ".venv") -or -not (Test-Path ".venv\Scripts\activate.ps1")) {
+    Write-Host "🐍 Creating Python virtual environment..."
+    python -m venv .venv
+    & ".\venv\Scripts\activate.ps1"
+    pip install -r requirements.txt
+    python -c "from models.db import init_db; init_db()"
+} else {
+    Write-Host "✅ Backend environment already exists, activating..." -ForegroundColor Green
+    & ".\venv\Scripts\activate.ps1"
+    # Check if database needs initialization
+    if (-not (Test-Path "hackathon.db")) {
+        Write-Host "🗄️ Initializing database..."
+        python -c "from models.db import init_db; init_db()"
+    }
+}
 Set-Location ..
 
 # Setup frontend
 Write-Host "🎨 Setting up frontend..."
 Set-Location frontend
-npm install
+if (-not (Test-Path "node_modules")) {
+    Write-Host "📦 Installing frontend dependencies..."
+    npm install
+} else {
+    Write-Host "✅ Frontend dependencies already installed" -ForegroundColor Green
+}
 Set-Location ..
 
 Write-Host ""

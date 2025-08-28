@@ -276,8 +276,8 @@ Immediate targets:
 ### RAG Context Retrieval
 ![RAG System](screenshots/HackathonHero%20RAG.png)
 
-### System Architecture Diagram
-![Architecture](screenshots/HackathonHero%20Diagram.png)
+### Markdown streaming
+![Markdown Streaming](screenshots/HackathonHero%20Diagram.png)
 
 ---
 
@@ -334,7 +334,7 @@ FAISS, FastAPI, React, Tailwind, Ollama, gpt-oss models — respective licenses 
 
 ---
 ## 21. Maintainers
-Add handle(s) here.
+@genggao
 
 ---
 ## 22. Appendix (API Snapshot)

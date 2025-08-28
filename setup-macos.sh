@@ -58,29 +58,49 @@ else
     echo "✅ Ollama already installed"
 fi
 
-# Clone repository
-if [ ! -d "hackathon-agent" ]; then
-    echo "📥 Cloning HackathonHero repository..."
-    git clone https://github.com/genggao/hackathon-agent.git
-    cd hackathon-agent
+# Check if we're already in the repository or need to clone/navigate
+if [ -f "backend/main.py" ] && [ -f "frontend/package.json" ]; then
+    echo "✅ Already in HackathonHero repository directory"
 else
-    echo "✅ Repository already cloned"
-    cd hackathon-agent
+    if [ ! -d "hackathon-agent" ]; then
+        echo "📥 Cloning HackathonHero repository..."
+        git clone https://github.com/genggao/hackathon-agent.git
+        cd hackathon-agent
+    else
+        echo "✅ Repository already cloned"
+        cd hackathon-agent
+    fi
 fi
 
 # Setup backend
 echo "🔧 Setting up backend..."
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python -c "from models.db import init_db; init_db()"
+if [ ! -d ".venv" ] || [ ! -f ".venv/bin/activate" ]; then
+    echo "🐍 Creating Python virtual environment..."
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt
+    python -c "from models.db import init_db; init_db()"
+else
+    echo "✅ Backend environment already exists, activating..."
+    source .venv/bin/activate
+    # Check if database needs initialization
+    if [ ! -f "hackathon.db" ]; then
+        echo "🗄 Initializing database..."
+        python -c "from models.db import init_db; init_db()"
+    fi
+fi
 cd ..
 
 # Setup frontend
 echo "🎨 Setting up frontend..."
 cd frontend
-npm install
+if [ ! -d "node_modules" ]; then
+    echo "📦 Installing frontend dependencies..."
+    npm install
+else
+    echo "✅ Frontend dependencies already installed"
+fi
 cd ..
 
 echo ""
