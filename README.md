@@ -6,7 +6,7 @@
 
 ---
 ## Quick Links
-- Demo Video (≤3 min): *(add YouTube link before submission)*
+- Demo Video (≤3 min): [HackathonHero Demo](https://www.youtube.com/watch?v=MzwTr9xYtW8)
 - Live Screens / Screenshots: `screenshots/` *(see below)*
 - Gap / Roadmap Tracker: [GAP.md](./GAP.md)
 - Primary Category: **Best Local Agent**
@@ -254,7 +254,7 @@ Immediate targets:
 ## 14. Devpost Submission Checklist
 - [x] Public repo with this README
 - [x] LICENSE file present (MIT)
-- [ ] 3‑minute demo video (offline proof + tool calls visible)
+- [x] 3‑minute demo video (offline proof + tool calls visible)
 - [x] Screenshots (Chat, Todos, RAG retrieval, Artifacts)
 - [x] Category justification paragraph (see [CATEGORY_JUSTIFICATION.md](./CATEGORY_JUSTIFICATION.md))
 - [x] Model usage & offline explanation (see [MODEL_USAGE_OFFLINE.md](./MODEL_USAGE_OFFLINE.md))
