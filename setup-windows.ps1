@@ -140,15 +140,15 @@ if ((Test-Path "backend\main.py") -and (Test-Path "frontend\package.json")) {
 # Setup backend
 Write-Host "🔧 Setting up backend..."
 Set-Location backend
-if (-not (Test-Path ".venv") -or -not (Test-Path ".venv\Scripts\activate.ps1")) {
+if (-not (Test-Path ".venv") -or -not (Test-Path ".venv\Scripts\Activate")) {
     Write-Host "🐍 Creating Python virtual environment..."
     python -m venv .venv
-    & ".\venv\Scripts\activate.ps1"
+    & ".venv\Scripts\Activate"
     pip install -r requirements.txt
     python -c "from models.db import init_db; init_db()"
 } else {
     Write-Host "✅ Backend environment already exists, activating..." -ForegroundColor Green
-    & ".\venv\Scripts\activate.ps1"
+    & ".venv\Scripts\Activate"
     # Check if database needs initialization
     if (-not (Test-Path "hackathon.db")) {
         Write-Host "🗄️ Initializing database..."
@@ -199,7 +199,7 @@ Write-Host "🔧 Starting backend server..." -ForegroundColor Yellow
 Set-Location backend
 $backendJob = Start-Job -ScriptBlock {
     Set-Location $using:PWD
-    & ".\venv\Scripts\activate.ps1"
+    & ".venv\Scripts\Activate"
     uvicorn main:app --reload --host 0.0.0.0
 }
 Set-Location ..
