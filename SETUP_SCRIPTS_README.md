@@ -103,6 +103,28 @@ ollama serve
 
 ### Common Issues
 
+## 🐛 Troubleshooting
+
+### Common Issues
+
+#### PATH Issues on macOS
+If you see "Node.js not found" or "npm not found" errors after Homebrew installation:
+
+**Option 1: Use the PATH fix helper**
+```bash
+curl -fsSL https://raw.githubusercontent.com/genggao/hackathon-agent/main/fix-macos-path.sh | bash
+```
+
+**Option 2: Manual PATH fix**
+```bash
+# Add to your shell profile
+echo 'export PATH="/opt/homebrew/opt/node@22/bin:$PATH"' >> ~/.zshrc
+echo 'export PATH="/opt/homebrew/opt/python@3.11/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+**Note**: Intel Macs use `/usr/local` instead of `/opt/homebrew`
+
 #### Permission Denied (MacOS/Linux)
 ```bash
 chmod +x setup-*.sh

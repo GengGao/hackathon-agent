@@ -7,6 +7,13 @@ set -e  # Exit on any error
 echo "🚀 HackathonHero - MacOS Setup"
 echo "================================"
 
+# Detect architecture for Homebrew paths
+if [[ $(uname -m) == 'arm64' ]]; then
+    BREW_PREFIX="/opt/homebrew"
+else
+    BREW_PREFIX="/usr/local"
+fi
+
 # Function to check if command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
@@ -16,8 +23,10 @@ command_exists() {
 if ! command_exists brew; then
     echo "📦 Installing Homebrew..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshrc
-    eval "$(/opt/homebrew/bin/brew shellenv)"
+    if ! grep -q 'eval "$(${BREW_PREFIX}/bin/brew shellenv)"' ~/.zshrc 2>/dev/null; then
+        echo "eval \"\$(${BREW_PREFIX}/bin/brew shellenv)\"" >> ~/.zshrc
+    fi
+    eval "$(${BREW_PREFIX}/bin/brew shellenv)"
 else
     echo "✅ Homebrew already installed"
 fi
@@ -26,8 +35,13 @@ fi
 if ! command_exists python3 || [[ "$(python3 --version 2>&1 | awk '{print $2}' | cut -d. -f1,2)" < "3.11" ]]; then
     echo "🐍 Installing Python 3.11+..."
     brew install python@3.11
-    echo 'export PATH="/opt/homebrew/opt/python@3.11/bin:$PATH"' >> ~/.zshrc
-    export PATH="/opt/homebrew/opt/python@3.11/bin:$PATH"
+    # Add to shell profile for future sessions
+    PYTHON_PATH="${BREW_PREFIX}/opt/python@3.11/bin"
+    if ! grep -q "export PATH=\"${PYTHON_PATH}:\$PATH\"" ~/.zshrc 2>/dev/null; then
+        echo "export PATH=\"${PYTHON_PATH}:\$PATH\"" >> ~/.zshrc
+    fi
+    # Set PATH for current session
+    export PATH="${PYTHON_PATH}:$PATH"
 else
     echo "✅ Python 3.11+ already installed"
 fi
@@ -36,10 +50,20 @@ fi
 if ! command_exists node || [[ "$(node --version | cut -d'v' -f2 | cut -d. -f1)" < "22" ]]; then
     echo "📱 Installing Node.js 22+..."
     brew install node@22
-    echo 'export PATH="/opt/homebrew/opt/node@22/bin:$PATH"' >> ~/.zshrc
-    export PATH="/opt/homebrew/opt/node@22/bin:$PATH"
+    # Add to shell profile for future sessions
+    NODE_PATH="${BREW_PREFIX}/opt/node@22/bin"
+    if ! grep -q "export PATH=\"${NODE_PATH}:\$PATH\"" ~/.zshrc 2>/dev/null; then
+        echo "export PATH=\"${NODE_PATH}:\$PATH\"" >> ~/.zshrc
+    fi
+    # Set PATH for current session
+    export PATH="${NODE_PATH}:$PATH"
 else
     echo "✅ Node.js 22+ already installed"
+    # Ensure Node.js 22 is in PATH for current session even if already installed
+    NODE_PATH="${BREW_PREFIX}/opt/node@22/bin"
+    if [[ -d "${NODE_PATH}" ]]; then
+        export PATH="${NODE_PATH}:$PATH"
+    fi
 fi
 
 # Install Tesseract OCR
@@ -57,6 +81,28 @@ if ! command_exists ollama; then
 else
     echo "✅ Ollama already installed"
 fi
+
+# Verify all required tools are available
+echo "🔍 Verifying installed dependencies..."
+echo "Current PATH: $PATH"
+echo "Node.js version: $(node --version 2>/dev/null || echo 'not found')"
+echo "npm version: $(npm --version 2>/dev/null || echo 'not found')"
+echo "Python version: $(python3 --version 2>/dev/null || echo 'not found')"
+
+if ! command_exists python3; then
+    echo "❌ Python3 not found in PATH. Please restart your terminal or run: source ~/.zshrc"
+    exit 1
+fi
+if ! command_exists node; then
+    echo "❌ Node.js not found in PATH. Please restart your terminal or run: source ~/.zshrc"
+    echo "Expected Node.js path: ${BREW_PREFIX}/opt/node@22/bin"
+    exit 1
+fi
+if ! command_exists npm; then
+    echo "❌ npm not found in PATH. Please restart your terminal or run: source ~/.zshrc"
+    exit 1
+fi
+echo "✅ All dependencies verified"
 
 # Check if we're already in the repository or need to clone/navigate
 if [ -f "backend/main.py" ] && [ -f "frontend/package.json" ]; then
